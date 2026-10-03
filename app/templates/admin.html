@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% macro percent(value) %}{% if value is none %}N/A{% else %}{{ '%.1f'|format(value*100) }}%{% endif %}{% endmacro %}
+{% block title %}실험 관리자{% endblock %}
+{% block content %}
+<div class="admin"><h1>실험 결과</h1><div class="admin-summary"><div><span>전체 고유 도서 방문자</span><strong>{{ report.scopes.all.visitors }} / 50명</strong></div><div><span>현재 실험 판정</span><strong>{{ report.judgment }}</strong></div><div><span>운영 상태</span><strong>{{ '종료 시각 기록됨' if report.end else '종료 시각 미설정' }}</strong></div></div>
+<p>표본 충족: {{ '예' if report.sample_met else '아니오' }} · 가벼운 참여 30%: {{ '충족' if report.light_met else '미충족' }} · 한 줄 10%: {{ '충족' if report.text_met else '미충족' }} · 동시 충족: {{ '예' if report.light_met and report.text_met else '아니오' }}</p>
+<p>데이터 신뢰: {{ '가능' if report.reliable else '불가' }} {{ report.quality_reason }}</p>
+<p class="muted">기간: {{ report.start or '로컬 테스트 전체 기간' }} ≤ UTC &lt; {{ report.end or '집계 시점' }}<br>표시 시간대: {{ report.timezone }} · 집계 시각(UTC): {{ report.generated_at }}<br>분모: 기간 내 book_view의 visitor 합집합. 관리자·테스트 visitor 제외. 50명 도달은 자동 종료가 아닙니다.</p>
+<a class="button" href="{{ url_for('admin.export') }}">CSV Export (.zip)</a>
+<p class="muted">현지 시각: {{ report.start|localtime }} ~ {{ report.end|localtime }} · 집계 {{ report.generated_at|localtime }}</p>
+{% for scope, data in report.scopes.items() %}
+<section class="admin-scope"><h2>{{ '전체' if scope=='all' else scope }} · 방문자 {{ data.visitors }}명</h2>
+<div class="table-scroll"><table><thead><tr><th>지표</th><th>분자</th><th>분모</th><th>비율</th></tr></thead><tbody>{% for metric in data.metrics %}<tr><td>{{ metric.label }}</td><td>{{ metric.numerator }}</td><td>{{ metric.denominator if metric.denominator is not none else '—' }}</td><td>{{ percent(metric.ratio) }}</td></tr>{% endfor %}</tbody></table></div>
+<details><summary>이벤트 수·고유 사용자 수·공개 경로</summary><table><thead><tr><th>이벤트</th><th>횟수</th><th>고유 수</th><th>U/V</th></tr></thead><tbody>{% for e in data.events %}<tr><td>{{ e.name }}</td><td>{{ e.count }}</td><td>{{ e.unique }}</td><td>{{ percent(e.rate) }}</td></tr>{% endfor %}</tbody></table><table><thead><tr><th>노출</th><th>경로</th><th>횟수</th><th>고유 수</th></tr></thead><tbody>{% for p in data.paths %}<tr><td>{{ p.event }}</td><td>{{ p.source }}</td><td>{{ p.count }}</td><td>{{ p.unique }}</td></tr>{% endfor %}</tbody></table></details>
+<p class="muted">현재 유효 수(기간 내 행동 수와 별도): {% for k,v in data.current.items() %}{{ k }} {{ v }} {% endfor %}</p>
+</section>{% endfor %}
+<section id="test-data" class="admin-scope">
+<h2>테스트 visitor 전용 집계</h2>
+<p><strong>개발 검증용 데이터이며 실제 실험 집계에는 포함되지 않습니다.</strong></p>
+<p>동일한 기간·계산식으로 테스트 visitor만 집계합니다. 50명 표본 및 판정과 별개입니다. 최초 성공 이력은 취소·삭제 후에도 유지됩니다.</p>
+{% for scope, data in test_report.scopes.items() %}
+<section><h3>{{ '전체' if scope=='all' else scope }} · 고유 도서 방문자 {{ data.visitors }}명</h3>
+<div class="table-scroll"><table><thead><tr><th>최초 성공 이력 지표</th><th>분자</th><th>분모</th><th>비율</th></tr></thead><tbody>{% for metric in data.metrics %}<tr><td>{{ metric.label }}</td><td>{{ metric.numerator }}</td><td>{{ metric.denominator if metric.denominator is not none else '—' }}</td><td>{{ percent(metric.ratio) }}</td></tr>{% endfor %}</tbody></table></div>
+<details><summary>이벤트 이력·고유 사용자 (community_open / others_reveal 포함)</summary><table><thead><tr><th>이벤트</th><th>횟수</th><th>고유 사용자</th></tr></thead><tbody>{% for e in data.events %}<tr><td>{{ e.name }}</td><td>{{ e.count }}</td><td>{{ e.unique }}</td></tr>{% endfor %}</tbody></table></details>
+<p>현재 유효 상태(전체 기간): {% for k,v in data.current.items() %}{{ k }} {{ v }} {% endfor %}</p>
+</section>{% endfor %}
+</section>
+<section><h2>랜딩·선택</h2><p>랜딩 {{ report.landing.count }}회 / {{ report.landing.unique }}명 · 선택 {{ report.selection.count }}회 / {{ report.selection.unique }}명 · 선택 연결 도서 방문 {{ report.selection.arrivals }}회 · 직접 방문 {{ report.selection.direct_arrivals }}회</p><div class="table-scroll"><table><thead><tr><th>도서</th><th>위치</th><th>표시 수</th><th>선택 수</th><th>고유 선택자</th></tr></thead><tbody>{% for p in report.selection.positions %}<tr><td>{{ p.book_id }}</td><td>{{ p.position }}</td><td>{{ p.display_count }}</td><td>{{ p.select_count }}</td><td>{{ p.unique }}</td></tr>{% endfor %}</tbody></table></div></section>
+<section><h2>품질 확인</h2><p>시작 관측 없는 최초 제출: {{ report.quality.submit_without_start }}건<br>확인된 선행 노출 없는 상호작용: {{ report.quality.interaction_without_confirmed_exposure }}건<br>도착 순서·클라이언트 순서 불일치: {{ report.quality.client_order_arrival_mismatch }}건<br>제외 이벤트: {{ report.quality.excluded_events }}건</p><p class="muted">누락은 원천을 보존합니다. 운영자가 신뢰 기준을 확정하고 DATA_RELIABLE로 판정을 지정합니다.</p><details><summary>제외 ID·사유 (관리자 전용)</summary>{% for v in report.excluded %}<p>{{ v.visitor_id }} · {{ v.exclusion_reason }}</p>{% endfor %}</details></section>
+<section><h2>콘텐츠 버전</h2>{% for b in report.contents %}<p>{{ b.title }} · {{ b.version }} · 적용 {{ b.effective_at }} · 출처 {{ b.source or '미확정' }} · 번역본 {{ b.translation or '미확정' }} · 사용 {{ b.usage_status }}</p>{% endfor %}</section>
+<p class="muted">대조군이 없어 이 결과만으로 참여 비용 감소의 인과적 효과를 확정할 수 없습니다. 자유 감상·상호작용·도서별 차이는 탐색 지표입니다.</p>
+</div>
+{% endblock %}

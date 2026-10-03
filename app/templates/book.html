@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static',filename='css/participant.css') }}">{% endblock %}
+{% block title %}{{ book.title }} · 책의 한 장면{% endblock %}
+{% block content %}
+<article class="reading">
+  <a class="back-link" href="/">← 책 선택으로</a>
+  <header class="book-heading"><p class="eyebrow">{{ book.author }}</p><h1>{{ book.title }}</h1></header>
+  <section class="situation"><h2>이 장면은</h2><p>{{ book.situation }}</p></section>
+  {% if book.illustration and book.illustration.src %}
+  <figure class="scene-illustration">
+    <img src="{{ url_for('static', filename=book.illustration.src) }}" alt="{{ book.illustration.alt|default('') }}"{% if book.illustration.width and book.illustration.height %} width="{{ book.illustration.width }}" height="{{ book.illustration.height }}"{% endif %} loading="lazy" decoding="async">
+  </figure>
+  {% endif %}
+  <section class="excerpt-section"><h2>원문 읽기</h2>
+    <blockquote id="excerpt">
+    {% for part in book.excerpt %}
+      {% if part.omission %}<p class="omission" aria-label="발췌 편집에 따른 생략 구간">[중략]<span>생략 구간</span></p>
+      {% else %}<div class="excerpt-paragraph"><p class="excerpt-block">{{ part.text }}</p></div>{% endif %}
+    {% endfor %}
+    </blockquote>
+  </section>
+  <section class="my-response" aria-labelledby="response-title">
+    <div class="response-intro">
+      <p class="reading-pause" aria-hidden="true">· · ·</p>
+      <p class="eyebrow">내 반응</p>
+      <h2 id="response-title">방금 읽은 장면에서<br>어떤 생각이 들었나요?</h2>
+      <p class="muted">원하는 방식으로 편하게 남겨주세요.<br>모든 항목은 선택 사항이에요.</p>
+    </div>
+    <section class="reaction-section" data-kind="emoji"><p class="response-label">느낌</p><h3 class="response-question">{{ book.emoji_question }}</h3>
+      <div class="choices emoji-choices">{% for option in book.emoji_options %}{% set parts = option.split(' ', 1) %}<button type="button" data-choice="emoji" data-option="{{ loop.index0 }}" aria-pressed="false"><span class="emotion-symbol">{{ parts[0] }}</span>{% if parts|length > 1 %} <span class="emotion-text">{{ parts[1] }}</span>{% endif %}</button>{% endfor %}</div>
+      <button class="quiet cancel" type="button" data-cancel="emoji" hidden>선택 취소</button>
+      <div id="emoji-results" class="results" hidden></div>
+    </section>
+    <section class="reaction-section" data-kind="poll"><p class="response-label">생각</p><h3 class="response-question">{{ book.poll_question }}</h3>{% if book.poll_description %}<p class="muted">{{ book.poll_description }}</p>{% endif %}
+      <div class="choices poll-choices">{% for option in book.poll_options %}<button type="button" data-choice="poll" data-option="{{ loop.index0 }}" aria-pressed="false">{{ option }}</button>{% endfor %}</div>
+      <button class="quiet cancel" type="button" data-cancel="poll" hidden>선택 취소</button>
+      <div id="poll-results" class="results" hidden></div>
+    </section>
+    <section class="reaction-section"><p class="response-label">한 문장</p><h3 class="response-question"><label for="short-body">{{ book.short_question }}</label></h3><p class="muted">{{ book.short_help }}</p>
+      <form id="short-form" class="review-form" data-kind="short"><textarea id="short-body" name="body" rows="2" placeholder="떠오른 생각을 한 문장으로 적어주세요." aria-describedby="short-limit"></textarea><div class="form-actions"><span id="short-limit" class="muted">최대 150자</span><button type="button" class="quiet" data-delete="short" hidden>삭제하기</button><button type="submit">등록하기</button></div></form>
+      <div id="individual-short" class="individual-reviews" hidden><h3>다른 사람들의 한 줄</h3><div id="individual-list"></div></div>
+    </section>
+  </section>
+  <section class="community-gateway"><h2>다른 사람들은<br>이 장면을 어떻게 읽었을까요?</h2><button id="community-open" type="button">다른 사람들의 감상 보기</button></section>
+  <section id="community" class="community" hidden><p class="eyebrow">다른 사람들의 생각</p><h2>같은 장면, 서로 다른 생각</h2>
+    <section><h3>한 줄 감상</h3><div id="community-short"></div></section>
+    <section><h3>자유 감상</h3><div id="community-full"></div></section>
+    <section class="full-invitation"><h3>조금 더 이야기하고 싶나요?</h3><p>앞에서 남긴 생각이나 다른 사람의 의견을 보고 떠오른 생각을 자유롭게 남겨주세요.</p><button id="full-open" type="button">더 이야기하기</button>
+      <form id="full-form" class="review-form" data-kind="full" hidden><label for="full-body">자유 감상</label><textarea id="full-body" name="body" rows="7" placeholder="자유롭게 생각을 남겨주세요." aria-describedby="full-limit"></textarea><div class="form-actions"><span id="full-limit" class="muted">최대 2,000자</span><button type="submit">등록하기</button><button type="button" class="quiet" data-delete="full" hidden>삭제하기</button></div></form>
+    </section>
+  </section>
+</article>
+<div class="status-box" aria-live="polite"><span id="save-status"></span><p id="page-error" class="error" role="alert"></p><button id="retry" type="button" hidden>같은 요청 다시 시도</button></div>
+<div id="bootstrap" data-json='{{ bootstrap|tojson }}' hidden></div>
+{% endblock %}
+{% block scripts %}<script type="module" src="{{ url_for('static',filename='js/book.js') }}"></script>{% endblock %}
