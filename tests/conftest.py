@@ -2,12 +2,25 @@ import json
 import re
 from html import unescape
 from uuid import uuid4
+from time import perf_counter
 
 import pytest
 
 from app import create_app
 from app.db import get_db, init_db
 from app.services.event_logging import utcnow
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_call(item):
+    switch = getattr(item, "postgres_profile_phase", None)
+    if switch:
+        switch("body")
+    try:
+        yield
+    finally:
+        if switch:
+            switch("teardown")
 
 
 @pytest.fixture
@@ -20,14 +33,23 @@ def app(tmp_path):
 
 class Participant:
     def __init__(self, app, book_id="metamorphosis"):
+        started = perf_counter()
         self.app = app
         self.client = app.test_client()
         self.sequence = 0
         self.open(book_id)
+        self.measure("client.participant", started)
+
+    def measure(self, label, started):
+        observer = self.app.config.get("DATABASE_PROFILE_OBSERVER")
+        if observer:
+            observer(label, perf_counter() - started, 1)
 
     def open(self, book_id="metamorphosis", landing=False):
         self.book_id = None if landing else book_id
+        started = perf_counter()
         response = self.client.get("/" if landing else f"/books/{book_id}", follow_redirects=True)
+        self.measure("client.bootstrap", started)
         assert response.status_code == 200
         self.bootstrap = json.loads(unescape(re.search(r"data-json='(.*?)'", response.get_data(as_text=True)).group(1)))
         self.sequence = 0
@@ -39,7 +61,15 @@ class Participant:
         return {"event_id": str(uuid4()), "page_view_id": self.bootstrap["page_view_id"], "client_occurred_at": utcnow(), "client_sequence": self.sequence, "operation": operation, **fields}
 
     def post(self, payload):
-        return self.client.post("/api/actions", json=payload, headers={"X-CSRF-Token": self.bootstrap["csrf"]})
+        started = perf_counter()
+        try:
+            return self.client.post("/api/actions", json=payload, headers={"X-CSRF-Token": self.bootstrap["csrf"]})
+        finally:
+            operation = payload.get("operation")
+            label = payload.get("event_type") if operation == "observe" else operation
+            if label not in ("book_view", "emoji", "poll", "short", "full", "reply", "like"):
+                label = "other"
+            self.measure("client.api." + label, started)
 
     def action(self, operation, **fields):
         response = self.post(self.payload(operation, **fields))

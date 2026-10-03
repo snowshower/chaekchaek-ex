@@ -5,7 +5,6 @@ from uuid import UUID, uuid4
 from flask import g
 
 from ..db import get_db
-from ..queries import first_event
 
 EXPOSURES = ("emoji_results_reveal", "poll_results_reveal", "short_reviews_reveal", "community_open", "others_reveal")
 EVENT_TYPES = (
@@ -47,24 +46,40 @@ def uuid(value):
 
 
 def context(book_id, page_id):
+    return context_with_short(book_id, page_id)[0]
+
+
+def context_with_short(book_id, page_id):
     result = {}
+    grouped = {kind: [] for kind in EXPOSURES}
+    rows = get_db().execute("SELECT event_type,event_id,page_view_id,timestamp,client_sequence FROM events WHERE visitor_id=? AND book_id=? AND event_type IN (?,?,?,?,?,?) ORDER BY timestamp,event_id", (g.visitor["visitor_id"], book_id, *EXPOSURES, "short_review_submit")).fetchall()
+    has_short = False
+    for row in rows:
+        if row["event_type"] == "short_review_submit":
+            has_short = True
+            continue
+        entry = {name: row[name] for name in ("event_id", "page_view_id", "timestamp", "client_sequence")}
+        grouped[row["event_type"]].append(entry)
     for kind in EXPOSURES:
-        rows = get_db().execute("SELECT event_id,page_view_id,timestamp,client_sequence FROM events WHERE visitor_id=? AND book_id=? AND event_type=? ORDER BY timestamp,event_id", (g.visitor["visitor_id"], book_id, kind)).fetchall()
+        rows = grouped[kind]
         result[kind] = {"current_page": [dict(r) for r in rows if r["page_view_id"] == page_id], "previous_pages": [dict(r) for r in rows if r["page_view_id"] != page_id], "observation": "confirmed" if rows else "unknown"}
-    return result
+    return result, has_short
 
 
 def record(payload, kind, **fields):
     db = get_db()
-    page = db.execute("SELECT * FROM page_views WHERE page_view_id=? AND visitor_id=?", (payload["page_view_id"], g.visitor["visitor_id"])).fetchone()
+    page = getattr(g, "action_page", None)
+    if not page or page["page_view_id"] != payload["page_view_id"] or page["visitor_id"] != g.visitor["visitor_id"]:
+        page = db.execute("SELECT * FROM page_views WHERE page_view_id=? AND visitor_id=?", (payload["page_view_id"], g.visitor["visitor_id"])).fetchone()
     if not page:
         raise PolicyError("현재 페이지 식별자를 확인할 수 없습니다.", 403)
+    exposure, has_short = context_with_short(page["book_id"], page["page_view_id"])
     event = {
         "event_id": payload["event_id"], "visitor_id": g.visitor["visitor_id"], "event_type": kind,
         "timestamp": utcnow(), "page_view_id": page["page_view_id"], "book_id": page["book_id"],
         "content_version_id": page["content_version_id"], "client_occurred_at": payload["client_occurred_at"],
-        "client_sequence": payload["client_sequence"], "exposure_context": json.dumps(context(page["book_id"], page["page_view_id"])),
-        "short_submitted_before": int(bool(first_event(g.visitor["visitor_id"], page["book_id"], "short_review_submit"))),
+        "client_sequence": payload["client_sequence"], "exposure_context": json.dumps(exposure),
+        "short_submitted_before": int(has_short),
     }
     event.update(fields)
     columns = list(event)

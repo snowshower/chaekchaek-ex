@@ -16,26 +16,99 @@ pytestmark = pytest.mark.skipif(not TEST_URL, reason="TEST_DATABASE_URL is not s
 
 
 @pytest.fixture
-def app():
+def app(request):
     import psycopg
     from psycopg import sql
+    from threading import Lock
+    from app.db_diagnostics import safe_error, connection_state
+    from time import perf_counter
+    from contextvars import ContextVar
+
+    timing_lock = Lock()
+    timings = {}
+    profile = {}
+    phase = "setup"
+    body_started = None
+    inside_http = ContextVar("postgres_profile_http", default=False)
+
+    def measure(stage, seconds, count):
+        with timing_lock:
+            qualified = phase + "." + stage
+            if stage.startswith(("db.", "sql.")):
+                qualified = phase + (".http_db." if inside_http.get() else ".direct_db.") + stage
+            for key in (stage, qualified):
+                old_count, old_seconds = profile.get(key, (0, 0.0))
+                profile[key] = (old_count + count, old_seconds + seconds)
+
+    def switch_phase(value):
+        nonlocal phase, body_started
+        if value == "body":
+            body_started = perf_counter()
+        elif phase == "body" and body_started is not None:
+            measure("test.body", perf_counter() - body_started, 1)
+        phase = value
+
+    request.node.postgres_profile_phase = switch_phase
+
+    def observe(values):
+        with timing_lock:
+            for stage, (count, seconds) in values.items():
+                old_count, old_seconds = timings.get(stage, (0, 0.0))
+                timings[stage] = (old_count + count, old_seconds + seconds)
+
+    def control_statement(stage, statement):
+        connection = None
+        started = perf_counter()
+        try:
+            with psycopg.connect(TEST_URL, autocommit=True, connect_timeout=10) as connection:
+                connection.execute(statement)
+        except psycopg.Error as error:
+            raise RuntimeError(safe_error(error, stage) + "; " + connection_state(connection)) from None
+        finally:
+            measure(stage, perf_counter() - started, 1)
 
     if TEST_URL == os.getenv("DATABASE_URL", "").strip():
         pytest.fail("TEST_DATABASE_URL must differ from the application DATABASE_URL")
     schema = "chaek_test_" + uuid4().hex
-    with psycopg.connect(TEST_URL, autocommit=True) as control:
-        control.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
-        try:
-            application = create_app({"TESTING": True, "DATABASE_URL": TEST_URL, "DATABASE_SCHEMA": schema,
+    control_statement("setup CREATE SCHEMA", sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
+    try:
+        application = create_app({"TESTING": True, "DATABASE_URL": TEST_URL, "DATABASE_SCHEMA": schema,
                 "VERCEL": False, "LOCAL_DEVELOPMENT": True, "SECRET_KEY": "test-secret", "EXPOSURE_POLICY": "cards",
-                "ADMIN_USERNAME": "admin", "ADMIN_PASSWORD": "test-password", "EXPERIMENT_START": "", "EXPERIMENT_END": ""})
-            with application.app_context():
+                "ADMIN_USERNAME": "admin", "ADMIN_PASSWORD": "test-password", "EXPERIMENT_START": "", "EXPERIMENT_END": "",
+                "DATABASE_DIAGNOSTIC_OBSERVER": observe, "DATABASE_PROFILE_OBSERVER": measure})
+        original_wsgi = application.wsgi_app
+
+        def profiled_wsgi(environ, start_response):
+            path = environ.get("PATH_INFO", "")
+            label = "http.actions" if path == "/api/actions" else "http.bootstrap"
+            started = perf_counter()
+            token = inside_http.set(True)
+            try:
+                return original_wsgi(environ, start_response)
+            finally:
+                inside_http.reset(token)
+                measure(label, perf_counter() - started, 1)
+        application.wsgi_app = profiled_wsgi
+        with application.app_context():
+            for iteration in (1, 2):
+                started = perf_counter()
                 init_db()
-                init_db()
-            yield application
+                measure(f"setup.init_db.{iteration}", perf_counter() - started, 1)
+        yield application
+    finally:
+        phase = "cleanup"
+        # Cleanup gets a fresh connection, not a session left idle for the test.
+        try:
+            control_statement("cleanup DROP SCHEMA", sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
         finally:
-            # Only this test-created UUID schema; never the public/production schema.
-            control.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
+            lines = [f"{stage}: calls={count}, seconds={seconds:.3f}" for stage, (count, seconds) in sorted(timings.items())]
+            request.node.add_report_section("teardown", "PostgreSQL timings", "\n".join(lines))
+            for stage, (count, seconds) in sorted(timings.items()):
+                request.node.user_properties.extend([(f"postgres.{stage}.calls", count), (f"postgres.{stage}.seconds", round(seconds, 3))])
+            for stage, (count, seconds) in sorted(profile.items()):
+                request.node.user_properties.extend([(f"profile.{stage}.calls", count), (f"profile.{stage}.seconds", round(seconds, 3))])
+            request.node.add_report_section("teardown", "HTTP and DB wall profile", "\n".join(
+                f"{stage}: calls={count}, seconds={seconds:.3f}" for stage, (count, seconds) in sorted(profile.items())))
 
 
 def test_postgres_schema_constraints_and_row_access(app):
@@ -108,13 +181,16 @@ def test_two_tabs_concurrently_preserve_first_success(app, participant):
     response = second.get("/books/metamorphosis")
     bootstrap = json.loads(unescape(re.search(r"data-json='(.*?)'", response.get_data(as_text=True)).group(1)))
     first_payload = participant.payload("short", body="Two tabs")
-    second_payload = {**first_payload, "event_id": str(uuid4()), "page_view_id": bootstrap["page_view_id"], "client_sequence": 1}
+    second_payload = {**first_payload, "event_id": str(uuid4()), "page_view_id": bootstrap["page_view_id"], "client_sequence": 2}
 
     def send(payload):
         client = app.test_client()
         client.set_cookie("visitor_id", token)
         return client.post("/api/actions", json=payload, headers={"X-CSRF-Token": bootstrap["csrf"]}).status_code
 
+    # Each tab must record its own book_view before writing, as real browsers do.
+    assert send({**second_payload, "event_id": str(uuid4()), "client_sequence": 1,
+                 "operation": "observe", "event_type": "book_view"}) == 200
     with ThreadPoolExecutor(max_workers=2) as pool:
         assert list(pool.map(send, [first_payload, second_payload])) == [200, 200]
     assert len(rows(app, "reviews")) == 1

@@ -1,4 +1,5 @@
 import json
+from time import perf_counter
 
 import click
 from flask import current_app, g
@@ -9,7 +10,14 @@ from .db_backend import connect, IntegrityError, OperationalError, validate_conf
 
 def get_db():
     if "db" not in g:
-        g.db = connect(current_app.config)
+        observer = current_app.config.get("DATABASE_PROFILE_OBSERVER")
+        started = perf_counter()
+        db = connect(current_app.config)
+        if observer:
+            from .db_profiling import ProfiledDB
+            observer("db.acquire", perf_counter() - started, 1)
+            db = ProfiledDB(db, observer)
+        g.db = db
     return g.db
 
 
@@ -18,13 +26,17 @@ def init_db():
     db.initialize_schema((ROOT / "app" / db.schema_file).read_text(encoding="utf-8"))
     db.begin_write()
     try:
-        for book in json.loads((ROOT / "data/books.json").read_text(encoding="utf-8")):
-            db.execute("INSERT INTO books VALUES (?,?) ON CONFLICT(book_id) DO NOTHING", (book["id"], book["title"]))
+        contents = json.loads((ROOT / "data/books.json").read_text(encoding="utf-8"))
+        cursors = db.execute_batch([("SELECT content_json FROM book_contents WHERE content_version_id=?", (book["version"],)) for book in contents])
+        inserts = []
+        for book, cursor in zip(contents, cursors):
+            inserts.append(("INSERT INTO books VALUES (?,?) ON CONFLICT(book_id) DO NOTHING", (book["id"], book["title"])))
             encoded = json.dumps(book, ensure_ascii=False, sort_keys=True)
-            existing = db.execute("SELECT content_json FROM book_contents WHERE content_version_id=?", (book["version"],)).fetchone()
+            existing = cursor.fetchone()
             if existing and existing[0] != encoded:
                 raise RuntimeError("콘텐츠 변경 시 새로운 version과 effective_at을 지정하세요.")
-            db.execute("INSERT INTO book_contents VALUES (?,?,?,?) ON CONFLICT(content_version_id) DO NOTHING", (book["version"], book["id"], encoded, book["effective_at"]))
+            inserts.append(("INSERT INTO book_contents VALUES (?,?,?,?) ON CONFLICT(content_version_id) DO NOTHING", (book["version"], book["id"], encoded, book["effective_at"])))
+        db.execute_batch(inserts)
         db.commit()
     except Exception:
         db.rollback()

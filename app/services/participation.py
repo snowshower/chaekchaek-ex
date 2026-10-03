@@ -18,10 +18,18 @@ def public_cohort():
 
 
 def eligibility(book_id):
-    return {"emoji": first_event(identity(), book_id, "emoji_reaction"),
-            "poll": first_event(identity(), book_id, "poll_vote"),
-            "short": first_event(identity(), book_id, "short_review_submit"),
-            "community": first_event(identity(), book_id, "community_open")}
+    rows = get_db().execute("SELECT * FROM events WHERE visitor_id=? AND book_id=? AND event_type IN (?,?,?,?) ORDER BY timestamp,event_id", (identity(), book_id, "emoji_reaction", "poll_vote", "short_review_submit", "community_open")).fetchall()
+    return eligibility_rows(rows)
+
+
+def eligibility_rows(rows):
+    names = {"emoji_reaction": "emoji", "poll_vote": "poll", "short_review_submit": "short", "community_open": "community"}
+    result = dict.fromkeys(names.values())
+    for row in rows:
+        key = names[row["event_type"]]
+        if result[key] is None:
+            result[key] = row
+    return result
 
 
 def require_community(book_id):
@@ -45,18 +53,28 @@ def public_reviews(book_id, kind, community=False):
 
 
 def state(book_id, version=None):
-    db, rights = get_db(), eligibility(book_id)
-    content = book(book_id, version)
+    db = get_db()
+    cursors = db.execute_batch([
+        ("SELECT * FROM events WHERE visitor_id=? AND book_id=? AND event_type IN (?,?,?,?) ORDER BY timestamp,event_id", (identity(), book_id, "emoji_reaction", "poll_vote", "short_review_submit", "community_open")),
+        ("SELECT 'emoji' AS kind,option_id,cancelled_at FROM emoji_reactions WHERE visitor_id=? AND book_id=? UNION ALL SELECT 'poll',option_id,cancelled_at FROM poll_votes WHERE visitor_id=? AND book_id=?", (identity(), book_id, identity(), book_id)),
+        ("SELECT * FROM reviews WHERE visitor_id=? AND book_id=?", (identity(), book_id)),
+        ("SELECT 'emoji' AS kind,x.option_id,count(*) AS count FROM emoji_reactions x JOIN visitors v ON x.visitor_id=v.visitor_id WHERE x.book_id=? AND x.cancelled_at IS NULL AND v.is_test=? GROUP BY x.option_id UNION ALL SELECT 'poll',x.option_id,count(*) FROM poll_votes x JOIN visitors v ON x.visitor_id=v.visitor_id WHERE x.book_id=? AND x.cancelled_at IS NULL AND v.is_test=? GROUP BY x.option_id", (book_id, public_cohort(), book_id, public_cohort())),
+    ])
+    rights = eligibility_rows(cursors[0].fetchall())
+    choices = {row["kind"]: row for row in cursors[1]}
+    own_reviews = {row["review_type"]: row for row in cursors[2]}
+    all_counts = list(cursors[3])
+    content = book(book_id, version) if rights["emoji"] or rights["poll"] else None
     result = {"community_open": bool(rights["community"]), "entitlements": {k: bool(v) for k, v in rights.items()}, "causes": {k: v["event_id"] if v else None for k, v in rights.items()}, "origins": {k: v["page_view_id"] if v else None for k, v in rights.items()}, "own_reviews": {}}
     for kind, table in (("emoji", "emoji_reactions"), ("poll", "poll_votes")):
-        own = db.execute(f"SELECT * FROM {table} WHERE visitor_id=? AND book_id=?", (identity(), book_id)).fetchone()
+        own = choices.get(kind)
         result[kind + "_selection"] = own["option_id"] if own and not own["cancelled_at"] else None
         if rights[kind]:
-            counts = {r[0]: r[1] for r in db.execute(f"SELECT x.option_id,count(*) FROM {table} x JOIN visitors v ON x.visitor_id=v.visitor_id WHERE x.book_id=? AND x.cancelled_at IS NULL AND v.is_test=? GROUP BY x.option_id", (book_id, public_cohort()))}
+            counts = {r["option_id"]: r["count"] for r in all_counts if r["kind"] == kind}
             total = sum(counts.values())
             result[kind + "_results"] = [{"option_id": str(i), "label": label, "count": counts.get(str(i), 0), "ratio": counts.get(str(i), 0) / total if total else None} for i, label in enumerate(content[kind + "_options"])]
     for kind in ("short", "full"):
-        row = db.execute("SELECT * FROM reviews WHERE visitor_id=? AND book_id=? AND review_type=?", (identity(), book_id, kind)).fetchone()
+        row = own_reviews.get(kind)
         result["own_reviews"][kind] = {"id": row["review_id"], "body": row["body"] if not row["deleted_at"] else "", "deleted": bool(row["deleted_at"])} if row else None
     if rights["short"] or rights["community"]:
         result["short_reviews"] = public_reviews(book_id, "short")
@@ -210,10 +228,10 @@ def observe(payload, page):
         else:
             raise PolicyError("랜딩 이벤트가 아닙니다.")
         return
-    rights = eligibility(page["book_id"])
     if kind == "book_view":
         observed_once(payload, kind, source_book_select_event_id=page["source_book_select_event_id"])
         return
+    rights = eligibility(page["book_id"])
     if not db.execute("SELECT 1 FROM events WHERE page_view_id=? AND event_type='book_view'", (page["page_view_id"],)).fetchone():
         raise PolicyError("도서 표시를 먼저 확인해야 합니다.")
     if kind == "community_open":
@@ -267,27 +285,42 @@ def execute(payload):
         raise PolicyError("삭제 상태가 올바르지 않습니다.")
     fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=True).encode()).hexdigest()
     db = get_db()
+    # Completed UUIDs need no write lock. A miss is rechecked after acquiring it.
+    db.begin_read()
+    try:
+        existing = db.execute("SELECT * FROM requests WHERE event_id=?", (payload["event_id"],)).fetchone()
+        page = db.execute("SELECT * FROM page_views WHERE page_view_id=? AND visitor_id=?", (payload["page_view_id"], identity())).fetchone()
+        if existing:
+            response = replay(existing, fingerprint, page)
+            db.commit()
+            return response
+        if page and payload.get("operation") != "observe":
+            if not page["book_id"] or not db.execute("SELECT 1 FROM events WHERE page_view_id=? AND event_type='book_view'", (page["page_view_id"],)).fetchone():
+                raise PolicyError("도서 표시를 먼저 확인해야 합니다.", 403)
+            if payload.get("operation") in ("emoji", "poll"):
+                book(page["book_id"], page["content_version_id"])
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    if not page:
+        raise PolicyError("현재 페이지를 확인할 수 없습니다.", 403)
+    g.action_page = page
     db.begin_write()
     try:
         existing = db.execute("SELECT * FROM requests WHERE event_id=?", (payload["event_id"],)).fetchone()
         if existing:
             if existing["visitor_id"] != identity() or existing["fingerprint"] != fingerprint:
                 raise PolicyError("같은 event_id에 다른 요청을 사용할 수 없습니다.", 409)
-            page = db.execute("SELECT * FROM page_views WHERE page_view_id=? AND visitor_id=?", (payload["page_view_id"], identity())).fetchone()
             response = json.loads(existing["response_json"])
-            if page and page["book_id"]:
-                response["state"] = state(page["book_id"], page["content_version_id"])
             db.commit()
-            return response
-        page = db.execute("SELECT * FROM page_views WHERE page_view_id=? AND visitor_id=?", (payload["page_view_id"], identity())).fetchone()
+            return response_state(response, page)
         if not page:
             raise PolicyError("현재 페이지를 확인할 수 없습니다.", 403)
         action = payload.get("operation")
         if action == "observe":
             observe(payload, page)
         else:
-            if not page["book_id"] or not db.execute("SELECT 1 FROM events WHERE page_view_id=? AND event_type='book_view'", (page["page_view_id"],)).fetchone():
-                raise PolicyError("도서 표시를 먼저 확인해야 합니다.", 403)
             if action in ("emoji", "poll"):
                 selection(payload, page, action)
             elif action in ("short", "full"):
@@ -300,10 +333,30 @@ def execute(payload):
                 raise PolicyError("허용되지 않은 작업입니다.")
         response = {"ok": True, "event_id": payload["event_id"]}
         db.execute("INSERT INTO requests VALUES (?,?,?,?)", (payload["event_id"], identity(), fingerprint, json.dumps(response)))
-        if page["book_id"]:
-            response["state"] = state(page["book_id"], page["content_version_id"])
         db.commit()
-        return response
     except Exception:
         db.rollback()
         raise
+    return response_state(response, page)
+
+
+def replay(existing, fingerprint, page):
+    if existing["visitor_id"] != identity() or existing["fingerprint"] != fingerprint:
+        raise PolicyError("같은 event_id에 다른 요청을 사용할 수 없습니다.", 409)
+    response = json.loads(existing["response_json"])
+    if page and page["book_id"]:
+        response["state"] = state(page["book_id"], page["content_version_id"])
+    return response
+
+
+def response_state(response, page):
+    if page["book_id"]:
+        db = get_db()
+        db.begin_read()
+        try:
+            response["state"] = state(page["book_id"], page["content_version_id"])
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+    return response

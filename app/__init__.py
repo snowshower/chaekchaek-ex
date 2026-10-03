@@ -130,9 +130,13 @@ def create_app(config=None):
 
     @app.errorhandler(OperationalError)
     def busy(error):
+        diagnostic = getattr(error, "diagnostic", None)
+        if diagnostic:
+            app.logger.error("%s", diagnostic)
         if "locked" in str(error).lower() or "busy" in str(error).lower():
             return jsonify(error="저장이 잠시 지연되었습니다. 같은 요청으로 다시 시도해주세요."), 503
-        app.logger.error("Database operation failed")
+        if not diagnostic:
+            app.logger.error("Database operation failed")
         return jsonify(error="저장에 실패했습니다. 입력을 유지하고 다시 시도해주세요."), 500
 
     @app.errorhandler(IntegrityError)
