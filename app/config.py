@@ -6,6 +6,8 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def settings():
     return {
+        "DATABASE_URL": os.getenv("DATABASE_URL", "").strip(),
+        "VERCEL": os.getenv("VERCEL", "") == "1",
         "DATABASE": os.getenv("DATABASE", str(ROOT / "instance" / "experiment.sqlite")),
         "SECRET_KEY": os.getenv("SECRET_KEY"),
         "ADMIN_USERNAME": os.getenv("ADMIN_USERNAME"),

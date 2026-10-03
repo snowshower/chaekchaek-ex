@@ -1,0 +1,9 @@
+{
+  "framework": "flask",
+  "buildCommand": "python scripts/build_vercel.py",
+  "functions": {
+    "wsgi.py": {
+      "excludeFiles": "{tests/**,docs/**,instance/**,artifacts/**,.venv/**,public/**,.env*}"
+    }
+  }
+}

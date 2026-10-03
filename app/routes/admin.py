@@ -40,7 +40,7 @@ def authenticated(function):
 @authenticated
 def dashboard():
     db = get_db()
-    db.execute("BEGIN")
+    db.begin_read()
     try:
         data = report()
         test_data = test_report()

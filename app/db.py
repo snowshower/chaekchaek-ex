@@ -1,33 +1,35 @@
 import json
-import sqlite3
-from pathlib import Path
 
 import click
 from flask import current_app, g
 
 from .config import ROOT
+from .db_backend import connect, IntegrityError, OperationalError, validate_configuration
 
 
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(current_app.config["DATABASE"], timeout=5, isolation_level=None)
-        g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA foreign_keys=ON")
-        g.db.execute("PRAGMA busy_timeout=5000")
+        g.db = connect(current_app.config)
     return g.db
 
 
 def init_db():
     db = get_db()
-    db.executescript((ROOT / "app/schema.sql").read_text(encoding="utf-8"))
-    db.execute("PRAGMA journal_mode=WAL")
-    for book in json.loads((ROOT / "data/books.json").read_text(encoding="utf-8")):
-        db.execute("INSERT OR IGNORE INTO books VALUES (?,?)", (book["id"], book["title"]))
-        encoded = json.dumps(book, ensure_ascii=False, sort_keys=True)
-        existing = db.execute("SELECT content_json FROM book_contents WHERE content_version_id=?", (book["version"],)).fetchone()
-        if existing and existing[0] != encoded:
-            raise RuntimeError("콘텐츠 변경 시 새로운 version과 effective_at을 지정하세요.")
-        db.execute("INSERT OR IGNORE INTO book_contents VALUES (?,?,?,?)", (book["version"], book["id"], encoded, book["effective_at"]))
+    db.initialize_schema((ROOT / "app" / db.schema_file).read_text(encoding="utf-8"))
+    db.begin_write()
+    try:
+        for book in json.loads((ROOT / "data/books.json").read_text(encoding="utf-8")):
+            db.execute("INSERT INTO books VALUES (?,?) ON CONFLICT(book_id) DO NOTHING", (book["id"], book["title"]))
+            encoded = json.dumps(book, ensure_ascii=False, sort_keys=True)
+            existing = db.execute("SELECT content_json FROM book_contents WHERE content_version_id=?", (book["version"],)).fetchone()
+            if existing and existing[0] != encoded:
+                raise RuntimeError("콘텐츠 변경 시 새로운 version과 effective_at을 지정하세요.")
+            db.execute("INSERT INTO book_contents VALUES (?,?,?,?) ON CONFLICT(content_version_id) DO NOTHING", (book["version"], book["id"], encoded, book["effective_at"]))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
 
 
 def register(app):
@@ -63,7 +65,7 @@ def register(app):
         if cutoff > utcnow():
             raise click.ClickException("미래 기준으로 폐기할 수 없습니다.")
         db = get_db()
-        db.execute("BEGIN IMMEDIATE")
+        db.begin_write()
         try:
             for table in ("reviews", "replies"):
                 db.execute(f"UPDATE {table} SET body='',body_purged_at=? WHERE deleted_at IS NOT NULL AND deleted_at<? AND body_purged_at IS NULL", (utcnow(), cutoff))

@@ -6,3 +6,7 @@ instance/
 .env
 *.sqlite*
 artifacts/
+public/static/
+.vercel/
+.env.*
+!.env.example

@@ -1,0 +1,11 @@
+.env
+.env.*
+.venv/
+.git/
+.codex/
+.aws/
+instance/
+artifacts/
+__pycache__/
+.pytest_cache/
+*.sqlite*

@@ -1,8 +1,6 @@
 import hmac
 import json
 import secrets
-import sqlite3
-from pathlib import Path
 from uuid import UUID
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -11,7 +9,7 @@ from flask import Flask, g, jsonify, make_response, redirect, render_template, r
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from .config import ROOT, settings
-from .db import get_db, register
+from .db import get_db, register, IntegrityError, OperationalError, validate_configuration
 from .services.event_logging import PolicyError, new_id, utcnow, validate_utc
 
 
@@ -19,6 +17,7 @@ def create_app(config=None):
     app = Flask(__name__, instance_relative_config=True)
     app.config.update(settings())
     app.config.update(config or {})
+    validate_configuration(app.config)
     # The formerly undecided policy is now cards, including old shell settings.
     # .env.example changes cannot update an already exported environment value.
     if app.config["EXPOSURE_POLICY"] in ("pending", ""):
@@ -45,7 +44,6 @@ def create_app(config=None):
     @app.template_filter("localtime")
     def localtime(value):
         return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(display_zone).isoformat(timespec="seconds") if value else "—"
-    Path(app.config["DATABASE"]).parent.mkdir(parents=True, exist_ok=True)
     register(app)
     signer = URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="visitor-cookie")
     confirm_signer = URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="cookie-confirm")
@@ -130,14 +128,14 @@ def create_app(config=None):
     def policy_error(error):
         return jsonify(error=error.message), error.status
 
-    @app.errorhandler(sqlite3.OperationalError)
+    @app.errorhandler(OperationalError)
     def busy(error):
         if "locked" in str(error).lower() or "busy" in str(error).lower():
             return jsonify(error="저장이 잠시 지연되었습니다. 같은 요청으로 다시 시도해주세요."), 503
         app.logger.error("Database operation failed")
         return jsonify(error="저장에 실패했습니다. 입력을 유지하고 다시 시도해주세요."), 500
 
-    @app.errorhandler(sqlite3.IntegrityError)
+    @app.errorhandler(IntegrityError)
     def integrity(_error):
         return jsonify(error="요청 순서 또는 식별자가 충돌했습니다. 페이지를 새로 열어주세요."), 409
 

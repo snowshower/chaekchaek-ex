@@ -164,12 +164,12 @@ def csv_bytes(rows):
 
 def export_zip():
     db = get_db()
-    db.execute("BEGIN")
+    db.begin_read()
     try:
         summary = report()
         files = {"events.csv": csv_bytes(period_events(True))}
         for table in ("visitors", "emoji_reactions", "poll_votes", "reviews", "likes", "replies", "page_views"):
-            columns = [r[1] for r in db.execute(f"PRAGMA table_info({table})") if r[1] != "csrf_token"]
+            columns = [name for name in db.columns(table) if name != "csrf_token"]
             files[table + ".csv"] = csv_bytes(dict(r) for r in db.execute(f"SELECT {','.join(columns)} FROM {table}"))
         metric_rows = []
         for scope, data in summary["scopes"].items():

@@ -267,7 +267,7 @@ def execute(payload):
         raise PolicyError("삭제 상태가 올바르지 않습니다.")
     fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=True).encode()).hexdigest()
     db = get_db()
-    db.execute("BEGIN IMMEDIATE")
+    db.begin_write()
     try:
         existing = db.execute("SELECT * FROM requests WHERE event_id=?", (payload["event_id"],)).fetchone()
         if existing:

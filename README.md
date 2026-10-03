@@ -1,6 +1,6 @@
 # 책의 한 장면 실험 앱
 
-Python + Flask + 표준 sqlite3 + HTML/CSS + Vanilla JavaScript 구현입니다. 정책 기준은 `docs/requirements.md`이며 두 실험 문서는 변경하지 않았습니다. 상황 설명과 발췌는 사용자가 이번 구현 요청에서 제공한 문구를 그대로 등록했습니다. 이미지와 임시 이미지는 없습니다.
+Python + Flask + SQLite(로컬) / PostgreSQL(운영) + HTML/CSS + Vanilla JavaScript 구현입니다. 정책 기준은 `docs/requirements.md`이며 두 실험 문서는 변경하지 않았습니다. 상황 설명과 발췌는 사용자가 이번 구현 요청에서 제공한 문구를 그대로 등록했습니다. 이미지와 임시 이미지는 없습니다.
 
 ## 현재 상태와 미확정 항목
 
@@ -87,7 +87,7 @@ $env:EXPOSURE_POLICY = "cards"
 |---|---|
 | SECRET_KEY | 필수, UUID 쿠키/확인 경로 서명용 비밀 |
 | ADMIN_USERNAME / ADMIN_PASSWORD | 관리자 Basic 인증, 미설정이면 503으로 차단 |
-| DATABASE | 기본 `instance/experiment.sqlite`, 운영 시 영속 볼륨의 절대 경로 권장 |
+| DATABASE | 로컬 SQLite 경로, 기본 `instance/experiment.sqlite`; DATABASE_URL이 있으면 사용하지 않음 |
 | LOCAL_DEVELOPMENT | 로컬 전용 `1`, 운영 `0`; 운영에서 Secure 쿠키·HTTPS 관리자 강제 |
 | EXPOSURE_POLICY | 기본값 `cards`: 원문 문단·결과 블록·개별 타인 감상 카드 |
 | EXPERIMENT_START / EXPERIMENT_END | UTC ISO 8601, 시작 포함·종료 미포함. 종료는 운영자가 설정, 50명 도달로 자동 종료 안 함 |
@@ -104,7 +104,7 @@ $env:EXPOSURE_POLICY = "cards"
 .\.venv\Scripts\waitress-serve.exe --listen=127.0.0.1:8000 --trusted-proxy=127.0.0.1 --trusted-proxy-headers=x-forwarded-proto wsgi:app
 ```
 
-프록시 실제 주소만 신뢰하도록 배포 환경에 맞게 지정하고 외부에서 Waitress 포트로 직접 접근하지 못하게 합니다. HTTPS 프록시가 X-Forwarded-Proto를 올바르게 전달해야 관리자 접근이 됩니다. 운영에서는 Flask 개발 서버를 사용하지 않습니다. 하나의 영속 SQLite DB를 사용하고 앱의 static 경로에는 DB·백업·비밀 파일을 두지 않습니다.
+프록시 실제 주소만 신뢰하도록 배포 환경에 맞게 지정하고 외부에서 Waitress 포트로 직접 접근하지 못하게 합니다. HTTPS 프록시가 X-Forwarded-Proto를 올바르게 전달해야 관리자 접근이 됩니다. 운영에서는 Flask 개발 서버를 사용하지 않습니다. 운영에서는 DATABASE_URL로 PostgreSQL을 사용하고 앱의 static 경로에는 DB·백업·비밀 파일을 두지 않습니다.
 
 프록시 접근 로그는 쿼리·쿠키·Authorization·본문을 기록하지 않도록 설정합니다. 앱은 요청 본문을 운영 로그에 출력하지 않습니다. Flask의 CSRF 및 쿠키 보안 원칙은 [공식 보안 문서](https://flask.palletsprojects.com/en/stable/web-security/)를 참고했습니다.
 
@@ -145,7 +145,7 @@ node --test tests/client.test.mjs
 
 삭제 상태의 reviews/replies 본문만 비우고 body_purged_at을 남깁니다. 유효 재작성 글은 대상이 아닙니다. ID·최초 제출·이벤트는 유지하고 새 참여 이벤트를 만들지 않습니다. 과거 Export/백업 파일은 이 명령으로 자동 변경되지 않으므로 확정된 사본 정책을 별도로 적용해야 합니다.
 
-백업은 SQLite의 `Connection.backup()`을 이용해 일관된 사본으로 만듭니다. 운영자가 확정한 위치·주기에 수행하며 DB 파일만 실행 중 단순 복사하지 않습니다. 최소 예:
+로컬 SQLite 백업은 `Connection.backup()`을 이용해 일관된 사본으로 만듭니다. 운영자가 확정한 위치·주기에 수행하며 DB 파일만 실행 중 단순 복사하지 않습니다. 최소 예:
 
 ```powershell
 .\.venv\Scripts\python.exe -c "import os,sqlite3; source=sqlite3.connect(os.environ['DATABASE']); target=sqlite3.connect('instance/backup.sqlite'); source.backup(target); target.close(); source.close()"
@@ -189,3 +189,55 @@ node --test tests/client.test.mjs
 src는 app/static/ 기준의 상대 경로입니다. 세 작품 모두 상황 설명과 원문 읽기 사이에 최대 640px 너비로 원본 비율과 height:auto를 유지하며 원본 전체가 보이도록 contain을 사용합니다. width/height에는 원본 픽셀 크기를 기록하여 로딩 전에도 정확한 공간을 확보합니다. 콘텐츠 등록 시 기존 version을 덮어쓰지 않고 새 version/effective_at으로 init-db를 실행합니다. 일러스트는 excerpt_view 관측 대상에 포함되지 않습니다.
 
 원문은 HTML 텍스트를 유지하며, 밝은 종이색 배경에 Noto Sans KR / Apple SD Gothic Neo / Malgun Gothic / 시스템 산세리프 순으로 로컬 글꼴을 사용합니다. 설치되지 않은 글꼴은 다음 글꼴로 대체하며 외부 폰트 요청은 발생하지 않습니다. 제목의 명조 스타일은 유지합니다.
+
+## SQLite / PostgreSQL 선택과 초기화
+
+`DATABASE_URL`이 비어 있으면 기존 `DATABASE` SQLite 경로를 사용합니다. 값이 있으면 psycopg 3 PostgreSQL을 사용하며 연결 실패 시 SQLite로 fallback하지 않습니다. DB 선택은 LOCAL_DEVELOPMENT와 무관합니다. 단, 운영 모드 또는 Vercel에서 URL이 없으면 시작 단계에서 오류가 발생합니다. PostgreSQL에서는 SQLite 파일/디렉터리를 만들지 않습니다.
+
+초기화 명령은 두 DB에서 동일합니다.
+
+```powershell
+python -m flask --app wsgi init-db
+```
+
+미리 환경변수를 설정한 신뢰할 수 있는 터미널에서 실행합니다. DB/schema 객체와 콘텐츠 버전이 없으면 생성하며, 반복 실행해도 기존 데이터를 삭제하지 않습니다. 이미 저장된 동일 버전의 콘텐츠가 변경되면 거부합니다. 앱 시작과 Vercel 빌드에서 DB를 자동 초기화하지 않습니다. 기존 SQLite 데이터를 PostgreSQL로 자동 복사하는 기능은 없습니다.
+
+DB별 차이는 `app/db_backend.py` 안에 있습니다. 서비스는 동일한 매개변수 SQL과 row 접근을 사용합니다. PostgreSQL은 원래의 정수 boolean, UTC 문자열, JSON 문자열을 유지하며 TEXT에 C collation을 적용합니다. 상태/이벤트/UUID 응답 저장은 한 transaction이며 PostgreSQL advisory lock으로 기존 단일 writer와 재시도 정책을 유지합니다. 관리자/CSV는 repeatable-read snapshot을 사용합니다. 자세한 SQL 전수 조사 결과는 [database-compatibility.md](docs/database-compatibility.md)에 있습니다.
+
+## Vercel deployment
+
+기존 `wsgi.py`의 Flask `app`을 사용합니다. [Vercel Flask 공식 안내](https://vercel.com/docs/frameworks/backend/flask)에 따라 `vercel.json`의 build command가 `app/static/`만 `public/static/`으로 복사합니다. CSS/JS/PNG URL은 `/static/...` 그대로이며 CDN에서 제공합니다. 템플릿, schema, books.json은 함수에 포함되고 instance/비밀 파일은 제외합니다. UI와 JavaScript 계측은 변경하지 않습니다.
+
+1. GitHub repository를 Vercel에 Import하고 framework를 Flask로 확인합니다. 처음 자동 배포가 실패하더라도 다음 설정 후 다시 배포합니다.
+2. PostgreSQL provider에서 운영 DB를 생성하고 backup/restore 기능을 확인합니다.
+3. provider가 발급한 DATABASE_URL을 준비합니다. TLS 설정을 유지하고, serverless 연결 수 제한에 맞는 pooled endpoint 사용 여부를 provider 안내에서 확인합니다. init-db에는 DDL 권한이 있는 연결이 필요합니다.
+4. Vercel Environment Variables에 아래 값을 Production 범위로 등록합니다. Preview는 별도 DB/비밀값으로 격리합니다. 운영 DB를 Preview 또는 테스트에 공유하지 않습니다.
+5. production SECRET_KEY를 `python -c "import secrets; print(secrets.token_hex(32))"`로 생성하고 비밀 설정에 저장합니다. 재배포 시 값을 유지합니다.
+6. ADMIN_USERNAME / ADMIN_PASSWORD를 안전한 실제 값으로 설정합니다.
+7. LOCAL_DEVELOPMENT=0으로 설정합니다.
+8. EXPOSURE_POLICY=cards로 설정합니다.
+9. 운영자가 결정한 실제 UTC ISO 8601 EXPERIMENT_START를 설정합니다. EXPERIMENT_END는 확정된 경우에만 설정합니다.
+10. 확정된 수집/보관 안내를 NOTICE_TEXT로 설정합니다.
+11. 정책 검토 완료 후 운영자가 OPERATIONS_CONFIRMED=1을 설정합니다. 실제 실험 시작값과 이 플래그는 이 작업에서 임의로 확정하지 않았습니다.
+12. 같은 운영 환경변수와 DATABASE_URL을 설정한 신뢰할 수 있는 터미널에서 `python -m flask --app wsgi init-db`를 실행합니다. 운영 콘텐츠 검증을 통과해야 합니다. HTTP 초기화 endpoint는 없습니다.
+13. Deploy/Redeploy합니다. build command는 static 복사만 수행합니다.
+14. HTTPS 참가자 페이지, 세 작품, PNG/CSS/JS, 쿠키 유지와 cards 노출 요청을 확인합니다.
+15. HTTPS `/admin/` 인증, 집계, CSV 다운로드 및 test visitor 격리를 확인합니다.
+
+필수 비밀/운영 환경변수: `DATABASE_URL`, `SECRET_KEY`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `LOCAL_DEVELOPMENT=0`, `EXPOSURE_POLICY=cards`, `EXPERIMENT_START`, `NOTICE_TEXT`, `OPERATIONS_CONFIRMED`. 추가 설정: `EXPERIMENT_END`, `DISPLAY_TIMEZONE=Asia/Seoul`, `DATA_RELIABLE`, `DATA_QUALITY_REASON`. DATABASE는 운영에서 사용하지 않습니다. `.env.example`은 빈 placeholder이며 앱이 자동으로 읽지 않습니다. URL/비밀번호/SECRET_KEY를 GitHub, 문서, 로그 또는 public 디렉터리에 넣지 않습니다.
+
+**기존 운영 시작 검증은 유지됩니다.** 현재 콘텐츠 source/translation/usage_status 중 미확정 값이 있으면 LOCAL_DEVELOPMENT=0 시작이 차단됩니다. 실제 운영 전에 출처·번역·사용 가능 여부를 확정해야 하며, 저장된 콘텐츠 버전을 덮어쓰지 않는 기존 version 정책을 따릅니다. 이 DB 지원 작업은 콘텐츠 승인이나 실험 시작 승인이 아닙니다.
+
+운영 PostgreSQL 백업/복구는 DB provider의 backup/restore 기능을 사용합니다. SQLite Connection.backup(), WAL/SHM 파일 복원, PRAGMA 검사는 PostgreSQL에 적용하지 않습니다. 복구 후 관리자 집계/최초 성공 이력/삭제 상태/공개 정책/test visitor 제외를 검증합니다. 위 기존 파일 백업 명령은 로컬 SQLite에만 해당합니다.
+
+## PostgreSQL 통합 테스트
+
+기존 Python/Node 테스트는 그대로 실행합니다. `TEST_DATABASE_URL`이 없으면 PostgreSQL 테스트는 이유와 함께 skip됩니다.
+
+```powershell
+# TEST_DATABASE_URL은 비밀 환경변수로 설정한 별도 테스트 DB URL
+python -m pytest -q -rs
+node --test tests/client.test.mjs
+```
+
+TEST_DATABASE_URL은 운영 DATABASE_URL과 달라야 하며 운영 데이터를 사용하지 않습니다. 테스트마다 임시 UUID schema를 CREATE/DROP하므로 전용 테스트 계정에 해당 권한이 필요합니다. 기존 HTTP 정책/관리자 테스트를 PostgreSQL에서도 재사용하며, 같은 fixture를 SQLite/PostgreSQL에 넣어 실제/테스트 집계 결과를 비교합니다. PostgreSQL URL이 없는 실행 결과만으로 실제 PostgreSQL 검증이 완료되었다고 판단하지 않습니다.

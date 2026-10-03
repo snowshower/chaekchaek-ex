@@ -12,7 +12,7 @@ from app.services.event_logging import utcnow
 
 @pytest.fixture
 def app(tmp_path):
-    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "test.sqlite"), "SECRET_KEY": "test-secret", "LOCAL_DEVELOPMENT": True, "EXPOSURE_POLICY": "cards", "ADMIN_USERNAME": "admin", "ADMIN_PASSWORD": "test-password", "EXPERIMENT_START": "", "EXPERIMENT_END": ""})
+    app = create_app({"TESTING": True, "DATABASE_URL": "", "VERCEL": False, "DATABASE": str(tmp_path / "test.sqlite"), "SECRET_KEY": "test-secret", "LOCAL_DEVELOPMENT": True, "EXPOSURE_POLICY": "cards", "ADMIN_USERNAME": "admin", "ADMIN_PASSWORD": "test-password", "EXPERIMENT_START": "", "EXPERIMENT_END": ""})
     with app.app_context():
         init_db()
     return app
