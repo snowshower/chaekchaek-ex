@@ -110,7 +110,7 @@ $env:EXPOSURE_POLICY = "cards"
 
 ## 관리자·CSV
 
-`/admin/`에서 환경변수의 Basic 인증 정보를 입력합니다. 모든 `/admin/export` 다운로드도 동일 인증이 필요합니다. 관리자 접근은 visitor의 테스트 여부를 변경하지 않고 `admin_test` cookie를 발급하거나 읽지 않습니다. Production에서 새 visitor는 실제 실험 visitor로 생성됩니다. LOCAL_DEVELOPMENT의 수동 방문자는 `is_test=1`로 격리하며, 자동화 테스트는 임시 DB에서 실제/테스트 cohort를 검증합니다.
+`/admin/`에서 환경변수의 Basic 인증 정보를 입력합니다. 모든 `/admin/export` 다운로드도 동일 인증이 필요합니다. 관리자 접근은 visitor의 테스트 여부를 변경하지 않고 `admin_test` cookie를 발급하거나 읽지 않습니다. Production의 일반 URL에서 새 visitor는 실제 실험 visitor로 생성됩니다. LOCAL_DEVELOPMENT의 수동 방문자는 `is_test=1`로 격리하며, 자동화 테스트는 임시 DB에서 실제/테스트 cohort를 검증합니다.
 
 대시보드 상단은 고유 도서 방문자 / 최소 표본 50명, 가벼운 참여율 / 목표 30%, 한 줄 감상 참여율 / 목표 10%, community_open, others_reveal을 표시합니다. 책별 카드의 수치는 기간 내 고유 사용자와 이벤트 횟수이며, 모든 상세 지표·공개 경로·현재 유효 상태는 펼쳐 볼 수 있습니다. 테스트 visitor 전용 집계 UI는 제공하지 않으며 기존 테스트 제외 계산식과 CSV는 유지합니다.
 
@@ -120,9 +120,19 @@ $env:EXPOSURE_POLICY = "cards"
 .\.venv\Scripts\python.exe -m flask --app wsgi mark-test VISITOR_UUID --reason "개발 테스트"
 ```
 
-CSV는 원천 events, visitors(비밀 토큰 제외), 참여 상태, page_views, metrics, contents, conditions, paths, positions, quality를 ZIP으로 제공합니다. 기간 밖의 필요한 이력도 원천에 포함하고 `in_period`로 구분합니다. 테스트 표시·사유는 보존하되 요약은 제외합니다. **모든 문자열 셀은 앞에 작은따옴표 하나를 붙입니다. 원문 복원 시 문자열 앞의 작은따옴표를 정확히 하나만 제거하세요.** 본문 내 쉼표·따옴표·줄바꿈·이모지를 보존합니다. Export에는 인증 비밀·CSRF 토큰·DB 경로가 없습니다.
+CSV는 원천 events, visitors(비밀 토큰 제외), 참여 상태, page_views, metrics, contents, conditions, paths, positions, quality를 ZIP으로 제공합니다. 기간 밖의 필요한 이력도 원천에 포함하고 `in_period`로 구분합니다. 테스트 표시·사유는 보존하되 요약은 제외합니다. Seed 작성자 행은 원천 CSV에서도 제외하며 normal이 seed 감상에 남긴 행동은 유지합니다. **모든 문자열 셀은 앞에 작은따옴표 하나를 붙입니다. 원문 복원 시 문자열 앞의 작은따옴표를 정확히 하나만 제거하세요.** 본문 내 쉼표·따옴표·줄바꿈·이모지를 보존합니다. Export에는 인증 비밀·CSRF 토큰·DB 경로가 없습니다.
 
 분모가 0이면 N/A입니다. 주 분모는 전체 기간 내 도서 방문자 합집합이며 랜딩·선택만으로 늘어나지 않습니다. 주 성공 기준은 50명 이상, 신뢰 가능, 가벼운 참여율 ≥30% 및 한 줄 참여율 ≥10% 동시 충족입니다. 판정은 반올림 전 값입니다. 상호작용은 같은 visitor·도서의 기간 내 실제 `others_reveal` 이후 성공한 좋아요/답글 합집합입니다. 같은 페이지는 client_sequence, 다른 페이지는 서버 UTC 선후 관계를 확인합니다. 확인되지 않은 노출은 추정하지 않습니다.
+
+## Seed participant 초대
+
+[Schema·배포 순서·production에서 5개 생성 절차](docs/seed-onboarding.md)를 따릅니다. 새 코드 배포 전에 관리자가 `init-db`로 두 seed 테이블을 등록해야 합니다. 일회용 URL은 방문 시 ‘참여 시작’ 버튼으로 소비하며 처음 방문하는 브라우저만 사용할 수 있습니다. Seed 감상은 공개하되 실험 KPI·emoji/poll 분포·실험 CSV에서는 seed 작성자 행동을 제외합니다. 일반 실험 UI에는 seed 표시를 붙이지 않습니다.
+
+```powershell
+python -m flask --app wsgi create-seed-links --count 5 --base-url https://your-production-domain --confirm-production
+```
+
+Count는 1–100, 기본 만료는 72시간입니다. 자동 생성하지 않으며 production DB에서는 명시적 확인 옵션이 필수입니다. 이 개발 작업에서는 production migration과 링크 생성을 실행하지 않았습니다.
 
 ## 테스트
 

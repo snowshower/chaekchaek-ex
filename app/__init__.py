@@ -50,7 +50,7 @@ def create_app(config=None):
 
     @app.before_request
     def identify():
-        if request.endpoint is None or request.endpoint == "static" or request.path.startswith("/admin"):
+        if request.endpoint is None or request.endpoint == "static" or request.path.startswith("/admin") or request.blueprint == "seed":
             return
         g.visitor = None
         token = request.cookies.get("visitor_id")
@@ -111,7 +111,7 @@ def create_app(config=None):
     def security_headers(response):
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["Referrer-Policy"] = "same-origin"
+        response.headers["Referrer-Policy"] = "no-referrer" if request.blueprint == "seed" else "same-origin"
         response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
         if not app.config["LOCAL_DEVELOPMENT"]:
             response.headers["Strict-Transport-Security"] = "max-age=31536000"
@@ -139,7 +139,9 @@ def create_app(config=None):
     from .routes.books import bp as books_bp
     from .routes.events import bp as events_bp
     from .routes.admin import bp as admin_bp
+    from .routes.seed import bp as seed_bp
     app.register_blueprint(books_bp)
     app.register_blueprint(events_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(seed_bp)
     return app

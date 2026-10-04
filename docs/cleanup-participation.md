@@ -22,7 +22,7 @@
 
 `--execute`만 전달하거나 확인 옵션이 빠지면 거부합니다. `--dry-run`과 `--execute`는 함께 사용할 수 없습니다. 실행 transaction에서 visitor 수가 달라졌으면 삭제 전에 거부하므로 dry-run을 다시 확인합니다. `--expect-visitors`는 같은 수의 다른 데이터로 교체된 상황까지 식별하는 fingerprint는 아닙니다. 실행 중 모집·참여를 중지해야 합니다.
 
-실제 SQLite/PostgreSQL schema의 FK 순서대로 다음 9개 테이블의 **모든 행**을 삭제합니다. test/non-test visitor를 모두 포함하며 취소·삭제된 참여 상태와 이전 기간의 이력도 포함합니다.
+실제 SQLite/PostgreSQL schema의 FK 순서대로 다음 10개 테이블의 **모든 행**을 삭제합니다. normal/seed/test visitor를 모두 포함하며 취소·삭제된 참여 상태와 이전 기간의 이력도 포함합니다. dry-run의 non_test 수에는 seed도 포함됩니다.
 
 | 삭제 순서 | 테이블 | 데이터 |
 |---|---|---|
@@ -32,9 +32,10 @@
 | 5–6 | emoji_reactions, poll_votes | 이모지·투표 |
 | 7 | reviews | 한 줄 감상·자유 감상 |
 | 8 | page_views | 페이지·콘텐츠 버전 참조 |
-| 9 | visitors | test/non-test visitor 및 식별 정보 |
+| 9 | seed_participants | visitor의 seed 연결 |
+| 10 | visitors | normal/seed/test visitor 및 식별 정보 |
 
-`events`는 `page_views`, `likes/replies`는 `reviews`를 참조하고 참여 테이블은 `visitors`를 참조합니다. FK를 끄거나 CASCADE/TRUNCATE로 삭제 범위를 넓히지 않습니다. Schema와 인덱스, `books`와 `book_contents`의 모든 버전을 보존합니다. 현재 schema에는 별도 운영 설정 테이블이 없으며 환경변수 설정은 수정하지 않습니다.
+`events`는 `page_views`, `likes/replies`는 `reviews`를 참조하고 참여 테이블은 `visitors`를 참조합니다. FK를 끄거나 CASCADE/TRUNCATE로 삭제 범위를 넓히지 않습니다. Schema와 인덱스, `books`와 `book_contents`의 모든 버전을 보존합니다. `seed_invites`의 token hash·만료·소비 상태도 운영 metadata로 보존하여 사용한 링크를 재활성화하지 않습니다. 환경변수 설정은 수정하지 않습니다.
 
 삭제·개수 확인은 한 write transaction에서 수행합니다. PostgreSQL은 기존 advisory lock과 참여 테이블의 SHARE ROW EXCLUSIVE lock을 사용하고, SQLite는 BEGIN IMMEDIATE를 사용합니다. 실패 시 전부 rollback합니다. dry-run은 읽기 transaction에서 개수만 조회하고 rollback합니다. 기존 cookie는 삭제된 visitor를 찾지 못하면 새 visitor로 발급됩니다. 관리자 집계는 0 / N/A부터 시작하며 콘텐츠 재등록은 필요 없습니다.
 
@@ -51,7 +52,9 @@ emoji_reactions: 1
 poll_votes: 1
 reviews: 2
 page_views: 2
+seed_participants: 0
 visitors: 2
 PRESERVE books: 3
 PRESERVE book_contents: 6
+PRESERVE seed_invites: 0
 ```

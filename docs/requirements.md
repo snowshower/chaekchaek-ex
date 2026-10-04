@@ -228,6 +228,15 @@
 
 ## 8. 데이터 모델
 
+### Seed onboarding과 cohort
+
+- 관리자 서버/DB 권한으로 `create-seed-links` CLI를 실행해 1–100개의 일회용 URL을 필요할 때 생성한다. Production/remote에는 명시적 확인이 필요하고 자동 생성하지 않는다. [운영 절차](seed-onboarding.md)를 따른다.
+- 256-bit 난수 token의 SHA-256 hash와 생성·만료·소비 시각을 `seed_invites`에 저장한다. 원문 token과 credential은 저장/CSV 출력하지 않는다. 기본 72시간 만료이며 생성 시 visitor/event는 만들지 않는다.
+- 첫 GET은 미리보기 안전 확인 화면만 제공하고, 브라우저 nonce와 서명 form을 검증한 POST에서 한 transaction으로 소비·visitor 생성·`seed_participants` 연결을 수행한다. 기존 visitor cookie가 있는 브라우저는 거부한다.
+- `seed_participants(visitor_id PK/FK, created_at)`는 visitor의 영구 seed 상태다. 기존 visitors 테이블·is_test 정책을 유지하고 additive init-db로 등록한다.
+- Normal은 공개/KPI/emoji·poll 분포에 포함한다. Seed는 감상을 공개하지만 모든 실험 KPI·emoji/poll 분포·작성자 CSV 행에서 제외한다. Test는 기존과 같이 KPI와 production 공개에서 제외하며 로컬 격리와 원천 CSV 정책을 유지한다.
+- Normal이 seed 감상을 실제로 보고 남긴 others_reveal·like·reply는 normal 작성자의 행동으로 정상 집계한다. Seed 감상에 별도 표시를 붙이지 않고 기존 지표 정의와 노출 검증을 유지한다.
+
 현재 상태는 분포·목록·현재 수의 기준, 이벤트는 성공 참여·공개·시도·시간 순서의 기준이다. 둘을 혼동하지 않는다.
 
 ### 8.1 최소 테이블

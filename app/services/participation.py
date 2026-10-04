@@ -4,6 +4,7 @@ import json
 from flask import current_app, g
 
 from ..db import get_db
+from ..cohorts import non_seed
 from ..queries import book, first_event
 from .event_logging import PolicyError, new_id, observed_once, record, utcnow, uuid, validate_utc
 
@@ -58,7 +59,7 @@ def state(book_id, version=None):
         ("SELECT * FROM events WHERE visitor_id=? AND book_id=? AND event_type IN (?,?,?,?) ORDER BY timestamp,event_id", (identity(), book_id, "emoji_reaction", "poll_vote", "short_review_submit", "community_open")),
         ("SELECT 'emoji' AS kind,option_id,cancelled_at FROM emoji_reactions WHERE visitor_id=? AND book_id=? UNION ALL SELECT 'poll',option_id,cancelled_at FROM poll_votes WHERE visitor_id=? AND book_id=?", (identity(), book_id, identity(), book_id)),
         ("SELECT * FROM reviews WHERE visitor_id=? AND book_id=?", (identity(), book_id)),
-        ("SELECT 'emoji' AS kind,x.option_id,count(*) AS count FROM emoji_reactions x JOIN visitors v ON x.visitor_id=v.visitor_id WHERE x.book_id=? AND x.cancelled_at IS NULL AND v.is_test=? GROUP BY x.option_id UNION ALL SELECT 'poll',x.option_id,count(*) FROM poll_votes x JOIN visitors v ON x.visitor_id=v.visitor_id WHERE x.book_id=? AND x.cancelled_at IS NULL AND v.is_test=? GROUP BY x.option_id", (book_id, public_cohort(), book_id, public_cohort())),
+        ("SELECT 'emoji' AS kind,x.option_id,count(*) AS count FROM emoji_reactions x JOIN visitors v ON x.visitor_id=v.visitor_id WHERE x.book_id=? AND x.cancelled_at IS NULL AND v.is_test=? AND " + non_seed('v') + " GROUP BY x.option_id UNION ALL SELECT 'poll',x.option_id,count(*) FROM poll_votes x JOIN visitors v ON x.visitor_id=v.visitor_id WHERE x.book_id=? AND x.cancelled_at IS NULL AND v.is_test=? AND " + non_seed('v') + " GROUP BY x.option_id", (book_id, public_cohort(), book_id, public_cohort())),
     ])
     rights = eligibility_rows(cursors[0].fetchall())
     choices = {row["kind"]: row for row in cursors[1]}

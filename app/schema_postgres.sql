@@ -4,6 +4,13 @@ CREATE TABLE IF NOT EXISTS visitors (
  csrf_token TEXT COLLATE "C" NOT NULL
 );
 CREATE TABLE IF NOT EXISTS books (book_id TEXT COLLATE "C" PRIMARY KEY, title TEXT COLLATE "C" NOT NULL);
+CREATE TABLE IF NOT EXISTS seed_invites (
+ token_hash TEXT COLLATE "C" PRIMARY KEY, created_at TEXT COLLATE "C" NOT NULL,
+ expires_at TEXT COLLATE "C" NOT NULL, used_at TEXT COLLATE "C"
+);
+CREATE TABLE IF NOT EXISTS seed_participants (
+ visitor_id TEXT COLLATE "C" PRIMARY KEY REFERENCES visitors, created_at TEXT COLLATE "C" NOT NULL
+);
 CREATE TABLE IF NOT EXISTS book_contents (
  content_version_id TEXT COLLATE "C" PRIMARY KEY, book_id TEXT COLLATE "C" NOT NULL REFERENCES books,
  content_json TEXT COLLATE "C" NOT NULL, effective_at TEXT COLLATE "C" NOT NULL

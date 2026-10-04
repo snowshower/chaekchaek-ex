@@ -7,6 +7,7 @@ from collections import Counter
 from flask import current_app
 
 from ..db import get_db
+from ..cohorts import non_seed
 from ..queries import books
 from ..report_queries import period_events, precedes, test_period_events
 from .event_logging import EVENT_TYPES, utcnow
@@ -125,10 +126,10 @@ def current_counts(scope):
     ):
         book_alias = "r" if join else "x"
         condition = f" AND {book_alias}.book_id=?" if scope != "all" else ""
-        result[key] = db.execute(f"SELECT count(*) FROM {table} x JOIN visitors v ON x.visitor_id=v.visitor_id {join} WHERE v.is_test=0 AND {active}{condition}", (scope,) if condition else ()).fetchone()[0]
+        result[key] = db.execute(f"SELECT count(*) FROM {table} x JOIN visitors v ON x.visitor_id=v.visitor_id {join} WHERE v.is_test=0 AND {non_seed('v')} AND {active}{condition}", (scope,) if condition else ()).fetchone()[0]
     for kind in ("short", "full"):
         condition = " AND r.book_id=?" if scope != "all" else ""
-        result[kind + "_reviews"] = db.execute("SELECT count(*) FROM reviews r JOIN visitors v ON r.visitor_id=v.visitor_id WHERE r.deleted_at IS NULL AND v.is_test=0 AND r.review_type=?" + condition, (kind, scope) if condition else (kind,)).fetchone()[0]
+        result[kind + "_reviews"] = db.execute("SELECT count(*) FROM reviews r JOIN visitors v ON r.visitor_id=v.visitor_id WHERE r.deleted_at IS NULL AND v.is_test=0 AND " + non_seed('v') + " AND r.review_type=?" + condition, (kind, scope) if condition else (kind,)).fetchone()[0]
     return result
 
 
@@ -143,10 +144,10 @@ def test_current_counts(scope):
     ):
         book_alias = "r" if join else "x"
         condition = f" AND {book_alias}.book_id=?" if scope != "all" else ""
-        result[key] = db.execute(f"SELECT count(*) FROM {table} x JOIN visitors v ON x.visitor_id=v.visitor_id {join} WHERE v.is_test=1 AND {active}{condition}", (scope,) if condition else ()).fetchone()[0]
+        result[key] = db.execute(f"SELECT count(*) FROM {table} x JOIN visitors v ON x.visitor_id=v.visitor_id {join} WHERE v.is_test=1 AND {non_seed('v')} AND {active}{condition}", (scope,) if condition else ()).fetchone()[0]
     for kind in ("short", "full"):
         condition = " AND r.book_id=?" if scope != "all" else ""
-        result[kind + "_reviews"] = db.execute("SELECT count(*) FROM reviews r JOIN visitors v ON r.visitor_id=v.visitor_id WHERE r.deleted_at IS NULL AND v.is_test=1 AND r.review_type=?" + condition, (kind, scope) if condition else (kind,)).fetchone()[0]
+        result[kind + "_reviews"] = db.execute("SELECT count(*) FROM reviews r JOIN visitors v ON r.visitor_id=v.visitor_id WHERE r.deleted_at IS NULL AND v.is_test=1 AND " + non_seed('v') + " AND r.review_type=?" + condition, (kind, scope) if condition else (kind,)).fetchone()[0]
     return result
 
 
@@ -170,7 +171,7 @@ def export_zip():
         files = {"events.csv": csv_bytes(period_events(True))}
         for table in ("visitors", "emoji_reactions", "poll_votes", "reviews", "likes", "replies", "page_views"):
             columns = [name for name in db.columns(table) if name != "csrf_token"]
-            files[table + ".csv"] = csv_bytes(dict(r) for r in db.execute(f"SELECT {','.join(columns)} FROM {table}"))
+            files[table + ".csv"] = csv_bytes(dict(r) for r in db.execute(f"SELECT {','.join('x.' + c for c in columns)} FROM {table} x WHERE {non_seed('x')}"))
         metric_rows = []
         for scope, data in summary["scopes"].items():
             metric_rows.append({"scope": scope, "metric_name": "book_visitors", "unique_count": data["visitors"], "sample": data["visitors"], "judgment": summary["judgment"]})
@@ -182,7 +183,7 @@ def export_zip():
                 metric_rows.append({"scope": scope, "metric_name": "current_" + kind, "current_count": count})
         metric_rows.extend([{"scope": "all", "metric_name": "landing_view", "event_count": summary["landing"]["count"], "unique_count": summary["landing"]["unique"]}, {"scope": "all", "metric_name": "book_select", "event_count": summary["selection"]["count"], "unique_count": summary["selection"]["unique"]}])
         files["metrics.csv"] = csv_bytes(metric_rows)
-        files["conditions.csv"] = csv_bytes([{k: summary[k] for k in ("generated_at", "start", "end", "timezone", "reliable", "quality_reason")} | {"exclusion": "visitors.is_test=1; all experiment metrics and public data excluded", "interval": "start inclusive; end exclusive; UTC", "exposure_policy": current_app.config["EXPOSURE_POLICY"], "notice": current_app.config["NOTICE_TEXT"], "policy": "docs/requirements.md", "csv_restore": "Remove exactly one leading apostrophe from every string cell. Dates are UTC. All source events included; in_period marks interval."}])
+        files["conditions.csv"] = csv_bytes([{k: summary[k] for k in ("generated_at", "start", "end", "timezone", "reliable", "quality_reason")} | {"exclusion": "visitors.is_test=1: experiment metrics and production public content excluded; seed_participants: actor rows excluded from all experiment metrics and CSV, short/full content public", "interval": "start inclusive; end exclusive; UTC", "exposure_policy": current_app.config["EXPOSURE_POLICY"], "notice": current_app.config["NOTICE_TEXT"], "policy": "docs/requirements.md", "csv_restore": "Remove exactly one leading apostrophe from every string cell. Dates are UTC. Non-seed source events included; in_period marks interval. Normal actions targeting seed reviews remain; seed target review rows are not exported."}])
         files["contents.csv"] = csv_bytes(dict(r) for r in db.execute("SELECT * FROM book_contents"))
         files["paths.csv"] = csv_bytes(dict(path, scope=scope) for scope, data in summary["scopes"].items() for path in data["paths"])
         files["positions.csv"] = csv_bytes(summary["selection"]["positions"])

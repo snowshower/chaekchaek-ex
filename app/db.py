@@ -47,6 +47,8 @@ def init_db():
 def register(app):
     from .services.cleanup import register as register_cleanup
     register_cleanup(app)
+    from .services.seed import register as register_seed
+    register_seed(app)
 
     @app.teardown_appcontext
     def close(_error):

@@ -18,7 +18,7 @@
 {% for name,label,target,met in [('light_participation','Light participation',30,report.light_met),('text_participation','한 줄 감상',10,report.text_met),('community_direct','community_open',none,false),('others_exposure','others_reveal',none,false)] %}{% set m = total.metrics|selectattr('metric_name','equalto',name)|first %}
 <article class="kpi" data-kpi="{{ name }}"><span>{{ label }}</span><strong>{{ percent(m.ratio) }}</strong><div>{{ m.numerator }} / {{ m.denominator }}명{% if target is not none %} · 목표 {{ target }}% <b class="goal {{ 'met' if met else 'pending' }}">{{ '충족' if met else '미충족' }}</b>{% endif %}</div></article>{% endfor %}
 </section>
-<p class="dashboard-note">기간 내 book_view의 visitor 합집합 · is_test visitor 제외 · 50명 도달은 자동 종료가 아닙니다.<br>기간: {{ report.start or '전체 기간' }} ≤ UTC &lt; {{ report.end or '집계 시점' }} · 표시 시간대 {{ report.timezone }}<br>현지 시각: {{ report.start|localtime }} ~ {{ report.end|localtime }} · 집계 {{ report.generated_at|localtime }}</p>
+<p class="dashboard-note">기간 내 book_view의 visitor 합집합 · is_test visitor 제외 · seed participant 제외 · 50명 도달은 자동 종료가 아닙니다.<br>기간: {{ report.start or '전체 기간' }} ≤ UTC &lt; {{ report.end or '집계 시점' }} · 표시 시간대 {{ report.timezone }}<br>현지 시각: {{ report.start|localtime }} ~ {{ report.end|localtime }} · 집계 {{ report.generated_at|localtime }}</p>
 <section class="book-dashboard-grid" aria-label="책별 핵심 상태">
 {% for scope,data in report.scopes.items() if scope != 'all' %}{% set content = report.contents|selectattr('id','equalto',scope)|first %}
 <article class="book-dashboard-card" data-book="{{ scope }}"><header><h2>{{ content.title }}</h2><span>book_view 고유 {{ data.visitors }}명</span></header>

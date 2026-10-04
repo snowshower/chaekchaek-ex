@@ -30,5 +30,14 @@ with tempfile.TemporaryDirectory() as directory:
         test = Participant(app)
         test.action('short', body='excluded local short')
     server = make_server("127.0.0.1", 0, app, threaded=True)
-    print(server.server_port, flush=True)
+    if os.getenv('BROWSER_SEED_FIXTURE') == '1':
+        import json
+        from urllib.parse import urlsplit
+        from app.services.seed import create_links
+        app.config['TESTING'] = True
+        with app.app_context():
+            links, _ = create_links(1, f'http://127.0.0.1:{server.server_port}', 72)
+        print(json.dumps({'port': server.server_port, 'seed_path': urlsplit(links[0]).path}), flush=True)
+    else:
+        print(server.server_port, flush=True)
     server.serve_forever()

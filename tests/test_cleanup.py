@@ -55,7 +55,7 @@ def test_cleanup_requires_explicit_confirmation_and_exact_count(app, smoke, args
 
 def test_cleanup_preserves_content_and_resets_experiment(app, smoke):
     before = snapshot(app)
-    assert all(before[table] for table in PARTICIPATION_TABLES)
+    assert all(before[table] for table in PARTICIPATION_TABLES if table != 'seed_participants')
     result = app.test_cli_runner().invoke(args=['cleanup-participation', '--execute',
         '--confirm-no-real-users', '--expect-visitors', '2'])
     assert result.exit_code == 0, result.output

@@ -5,6 +5,12 @@ CREATE TABLE IF NOT EXISTS visitors (
  csrf_token TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS books (book_id TEXT PRIMARY KEY, title TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS seed_invites (
+ token_hash TEXT PRIMARY KEY, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT
+);
+CREATE TABLE IF NOT EXISTS seed_participants (
+ visitor_id TEXT PRIMARY KEY REFERENCES visitors, created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS book_contents (
  content_version_id TEXT PRIMARY KEY, book_id TEXT NOT NULL REFERENCES books,
  content_json TEXT NOT NULL, effective_at TEXT NOT NULL
