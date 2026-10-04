@@ -8,9 +8,9 @@ from conftest import Participant, rows
 
 
 @pytest.mark.parametrize('bid,old_version', [
-    ('little-prince', 'little-prince-v2'),
-    ('old-man-and-sea', 'old-man-and-sea-v1'),
-    ('metamorphosis', 'metamorphosis-v1'),
+    ('little-prince', 'little-prince-v2-approved'),
+    ('old-man-and-sea', 'old-man-and-sea-v1-approved'),
+    ('metamorphosis', 'metamorphosis-v1-approved'),
 ])
 def test_illustration_version_preserves_content_and_has_static_image(app, bid, old_version):
     with app.app_context():

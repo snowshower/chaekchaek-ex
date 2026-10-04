@@ -52,10 +52,10 @@ def test_sample_threshold_exact_unrounded(app,visitors,light,short,reliable,expe
         for index in range(visitors):
             visitor,page = str(uuid4()),str(uuid4())
             db.execute('INSERT INTO visitors VALUES (?,?,?,0,NULL,?)',(visitor,'2026-01-01T00:00:00.000000Z','[]','csrf'))
-            db.execute('INSERT INTO page_views VALUES (?,?,?,?,NULL,NULL,?)',(page,visitor,'metamorphosis','metamorphosis-v1','2026-01-01T00:00:00.000000Z'))
+            db.execute('INSERT INTO page_views VALUES (?,?,?,?,NULL,NULL,?)',(page,visitor,'metamorphosis','metamorphosis-v1-approved','2026-01-01T00:00:00.000000Z'))
             names = ['book_view'] + (['emoji_reaction'] if index<light else []) + (['short_review_submit'] if index<short else [])
             for sequence,name in enumerate(names,1):
-                db.execute('INSERT INTO events (event_id,visitor_id,event_type,timestamp,page_view_id,book_id,content_version_id,exposure_context,client_occurred_at,client_sequence) VALUES (?,?,?,?,?,?,?,?,?,?)',(str(uuid4()),visitor,name,'2026-01-01T00:00:00.000000Z',page,'metamorphosis','metamorphosis-v1','{}','2026-01-01T00:00:00Z',sequence))
+                db.execute('INSERT INTO events (event_id,visitor_id,event_type,timestamp,page_view_id,book_id,content_version_id,exposure_context,client_occurred_at,client_sequence) VALUES (?,?,?,?,?,?,?,?,?,?)',(str(uuid4()),visitor,name,'2026-01-01T00:00:00.000000Z',page,'metamorphosis','metamorphosis-v1-approved','{}','2026-01-01T00:00:00Z',sequence))
         app.config['DATA_RELIABLE'] = reliable
         assert report()['judgment'] == expected
 
