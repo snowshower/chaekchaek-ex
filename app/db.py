@@ -45,6 +45,9 @@ def init_db():
 
 
 def register(app):
+    from .services.cleanup import register as register_cleanup
+    register_cleanup(app)
+
     @app.teardown_appcontext
     def close(_error):
         db = g.pop("db", None)

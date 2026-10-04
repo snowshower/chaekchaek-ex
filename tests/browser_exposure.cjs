@@ -26,7 +26,8 @@ async function action(page, type, click) {
   let diagnostics = '';
   server.stderr.on('data', data => { diagnostics += data; });
   try {
-    const [chunk] = await once(server.stdout, 'data');
+    const [chunk] = await Promise.race([once(server.stdout, 'data'),
+      once(server, 'exit').then(([code]) => {throw new Error(`Browser fixture server exited early (${code}): ${diagnostics}`);})]);
     const url = 'http://127.0.0.1:' + chunk.toString().trim();
     browser = await chromium.launch({
       executablePath: process.env.BROWSER_EXECUTABLE || 'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -65,13 +66,10 @@ async function action(page, type, click) {
     assert.deepEqual(errors, []);
     const admin = await browser.newPage({httpCredentials:{username:'admin',password:'browser-password'}});
     await admin.goto(url+'/admin/');
-    const scope = admin.locator('#test-data section').filter({has:admin.getByRole('heading', {name:/metamorphosis/})});
-    const metric = name => scope.locator('tbody tr').filter({has:admin.getByRole('cell',{name,exact:true})}).first();
-    assert.equal(await metric('타인 감상 실제 노출률 E/V').locator('td').nth(1).innerText(), '1');
-    assert.equal(await metric('타인 감상 실제 노출률 E/V').locator('td').nth(2).innerText(), '2');
-    assert.equal(await metric('상호작용률 (L∪R)/E').locator('td').nth(1).innerText(), '1');
-    assert.equal(await admin.locator('.admin-summary strong').first().innerText(), '0 / 50명');
-    console.log('PASS: legacy pending → cards bootstrap → real review DOM → native IntersectionObserver ≥50% → others_reveal POST 200 → like/reply → test admin E/V=1/2, interaction=1/1, experiment visitors=0; no page errors');
+    assert.equal(await admin.locator('#test-data').count(), 0);
+    assert.equal(await admin.locator('[data-kpi="visitors"] > strong').innerText(), '0명');
+    assert.equal(await admin.locator('[data-kpi="others_exposure"] > strong').innerText(), 'N/A');
+    console.log('PASS: legacy pending → cards bootstrap → native IntersectionObserver ≥50% → others_reveal POST 200 → like/reply → local test data excluded from dashboard; no page errors');
   } catch (error) {
     console.error(diagnostics.slice(-3000));
     throw error;

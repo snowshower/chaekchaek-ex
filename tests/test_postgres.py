@@ -10,6 +10,8 @@ from test_policies import *
 from test_reporting import *
 from test_local_community import *
 from test_integrity import test_concurrent_retry_and_distinct_tab_submissions
+from test_cleanup import *
+from test_admin_dashboard import *
 
 TEST_URL = os.getenv("TEST_DATABASE_URL", "").strip()
 pytestmark = pytest.mark.skipif(not TEST_URL, reason="TEST_DATABASE_URL is not set; PostgreSQL integration requires a dedicated test DB")

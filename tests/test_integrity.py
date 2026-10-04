@@ -44,12 +44,13 @@ def test_results_exposure_start_rules_and_test_public_interactions(app,participa
     assert review['likes'] == 0 and review['replies'] == []
 
 
-def test_admin_first_browser_is_excluded_and_https_required(app):
+def test_admin_browser_remains_real_and_https_required(app):
     client = app.test_client()
     auth={'Authorization':'Basic YWRtaW46dGVzdC1wYXNzd29yZA=='}
     assert client.get('/admin/',headers=auth).status_code == 200
     assert client.get('/books/metamorphosis',follow_redirects=True).status_code == 200
-    assert rows(app,'visitors')[0]['is_test'] == 1
+    assert rows(app,'visitors')[0]['is_test'] == 0
+    assert client.get_cookie('admin_test') is None
     app.config['LOCAL_DEVELOPMENT'] = False
     assert client.get('/admin/',headers=auth).status_code == 403
     assert client.get('/admin/',headers=auth,base_url='https://localhost').status_code == 200

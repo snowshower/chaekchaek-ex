@@ -188,7 +188,8 @@ def test_admin_auth_export_and_secret_exclusion(app, participant):
     auth = {'Authorization':'Basic YWRtaW46dGVzdC1wYXNzd29yZA=='}
     response = participant.client.get('/admin',headers=auth)
     assert response.status_code == 200
-    assert rows(app,'visitors')[0]['is_test'] == 1
+    assert rows(app,'visitors')[0]['is_test'] == 0
+    assert participant.client.get_cookie('admin_test') is None
     download = participant.client.get('/admin/export',headers=auth)
     archive = zipfile.ZipFile(io.BytesIO(download.data))
     assert 'metrics.csv' in archive.namelist()

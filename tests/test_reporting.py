@@ -183,7 +183,8 @@ def test_development_data_is_separate_and_preserves_history(app):
 
     response = app.test_client().get('/admin/', headers={'Authorization':'Basic YWRtaW46dGVzdC1wYXNzd29yZA=='})
     assert response.status_code == 200
-    assert '개발 검증용 데이터이며 실제 실험 집계에는 포함되지 않습니다.' in response.get_data(as_text=True)
+    assert '테스트 visitor 전용 집계' not in response.get_data(as_text=True)
+    assert 'is_test visitor 제외' in response.get_data(as_text=True)
 
 
 def test_fifty_test_visitors_do_not_satisfy_experiment_sample(app):

@@ -53,11 +53,6 @@ def create_app(config=None):
         if request.endpoint is None or request.endpoint == "static" or request.path.startswith("/admin"):
             return
         g.visitor = None
-        admin_browser = False
-        try:
-            admin_browser = signer.loads(request.cookies.get("admin_test", ""), max_age=30*86400) == "admin"
-        except BadSignature:
-            pass
         token = request.cookies.get("visitor_id")
         if token:
             try:
@@ -78,16 +73,14 @@ def create_app(config=None):
             order = list(dict.fromkeys(b["id"] for b in books()))
             secrets.SystemRandom().shuffle(order)
             local_test = app.config["LOCAL_DEVELOPMENT"] and not app.config["TESTING"]
-            is_test = admin_browser or local_test
-            reason = "admin browser" if admin_browser else "local development" if local_test else None
+            is_test = local_test
+            reason = "local development" if local_test else None
             get_db().execute("INSERT INTO visitors VALUES (?,?,?,?,?,?)", (visitor_id, utcnow(), json.dumps(order), int(is_test), reason, secrets.token_urlsafe(32)))
             destination = request.full_path.rstrip("?")
             proof = confirm_signer.dumps({"destination": destination})
             response = redirect(url_for("confirm_cookie", proof=proof))
             response.set_cookie("visitor_id", signer.dumps(visitor_id), max_age=30 * 86400, httponly=True, secure=not app.config["LOCAL_DEVELOPMENT"], samesite="Lax")
             return response
-        if admin_browser and not g.visitor["is_test"]:
-            get_db().execute("UPDATE visitors SET is_test=1,exclusion_reason='admin browser' WHERE visitor_id=?", (g.visitor["visitor_id"],))
         if request.path.startswith("/api/") and request.method != "GET":
             if not hmac.compare_digest(request.headers.get("X-CSRF-Token", "").encode(), g.visitor["csrf_token"].encode()):
                 return jsonify(error="페이지를 새로 연 후 다시 시도해주세요."), 403
