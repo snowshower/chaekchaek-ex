@@ -11,6 +11,7 @@ from test_reporting import *
 from test_local_community import *
 from test_integrity import test_concurrent_retry_and_distinct_tab_submissions
 from test_cleanup import *
+from test_cleanup_normal import *
 from test_admin_dashboard import *
 from test_seed import *
 
