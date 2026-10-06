@@ -11,6 +11,7 @@ from ..cohorts import non_seed
 from ..queries import books
 from ..report_queries import period_events, precedes, test_period_events
 from .event_logging import EVENT_TYPES, utcnow
+from .attribution import source_funnel
 
 LABELS = {
     "light_participation": "가벼운 참여율", "text_participation": "한 줄 감상 참여율",
@@ -112,7 +113,7 @@ def _report(all_events, counts):
         for position in range(1, 4):
             relevant = [e for e in selects if e["book_id"] == bid and e["display_position"] == position]
             positions.append({"book_id": bid, "position": position, "display_count": sum(json.loads(e["displayed_book_order"])[position-1] == bid for e in landing), "select_count": len(relevant), "unique": len({e["visitor_id"] for e in relevant})})
-    return {"generated_at": utcnow(), "start": current_app.config["EXPERIMENT_START"], "end": current_app.config["EXPERIMENT_END"], "timezone": current_app.config["DISPLAY_TIMEZONE"], "reliable": reliable, "quality_reason": current_app.config["DATA_QUALITY_REASON"], "sample_met": sample, "light_met": light is not None and light >= .3, "text_met": text is not None and text >= .1, "judgment": judgment, "scopes": scopes, "quality": quality, "landing": {"count": len(landing), "unique": len({e["visitor_id"] for e in landing})}, "selection": {"count": len(selects), "unique": len({e["visitor_id"] for e in selects}), "positions": positions, "arrivals": sum(bool(e["source_book_select_event_id"]) for e in events if e["event_type"] == "book_view"), "direct_arrivals": sum(not e["source_book_select_event_id"] for e in events if e["event_type"] == "book_view")}, "excluded": [dict(r) for r in get_db().execute("SELECT visitor_id,exclusion_reason FROM visitors WHERE is_test=1")], "contents": books()}
+    return {"generated_at": utcnow(), "start": current_app.config["EXPERIMENT_START"], "end": current_app.config["EXPERIMENT_END"], "timezone": current_app.config["DISPLAY_TIMEZONE"], "reliable": reliable, "quality_reason": current_app.config["DATA_QUALITY_REASON"], "sample_met": sample, "light_met": light is not None and light >= .3, "text_met": text is not None and text >= .1, "judgment": judgment, "scopes": scopes, "sources": source_funnel(events, qualified), "quality": quality, "landing": {"count": len(landing), "unique": len({e["visitor_id"] for e in landing})}, "selection": {"count": len(selects), "unique": len({e["visitor_id"] for e in selects}), "positions": positions, "arrivals": sum(bool(e["source_book_select_event_id"]) for e in events if e["event_type"] == "book_view"), "direct_arrivals": sum(not e["source_book_select_event_id"] for e in events if e["event_type"] == "book_view")}, "excluded": [dict(r) for r in get_db().execute("SELECT visitor_id,exclusion_reason FROM visitors WHERE is_test=1")], "contents": books()}
 
 
 def current_counts(scope):
@@ -172,6 +173,13 @@ def export_zip():
         for table in ("visitors", "emoji_reactions", "poll_votes", "reviews", "likes", "replies", "page_views"):
             columns = [name for name in db.columns(table) if name != "csrf_token"]
             files[table + ".csv"] = csv_bytes(dict(r) for r in db.execute(f"SELECT {','.join('x.' + c for c in columns)} FROM {table} x WHERE {non_seed('x')}"))
+        files["visitor_sources.csv"] = csv_bytes(dict(r) for r in db.execute(
+            "SELECT v.visitor_id,COALESCE(a.source,'direct') AS source FROM visitors v "
+            "LEFT JOIN visitor_attributions a ON a.visitor_id=v.visitor_id "
+            "WHERE v.is_test=0 AND " + non_seed('v')))
+        files["source_funnel.csv"] = csv_bytes(
+            dict(m, source=row["source"], landing_uv=row["landing"], book_view_uv=row["book_view"])
+            for row in summary["sources"] for m in row["metrics"])
         metric_rows = []
         for scope, data in summary["scopes"].items():
             metric_rows.append({"scope": scope, "metric_name": "book_visitors", "unique_count": data["visitors"], "sample": data["visitors"], "judgment": summary["judgment"]})

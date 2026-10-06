@@ -4,6 +4,10 @@ CREATE TABLE IF NOT EXISTS visitors (
  is_test INTEGER NOT NULL DEFAULT 0 CHECK(is_test IN (0,1)), exclusion_reason TEXT,
  csrf_token TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS visitor_attributions (
+ visitor_id TEXT PRIMARY KEY REFERENCES visitors,
+ source TEXT NOT NULL CHECK(source IN ('direct','slack','everytime','dc','arca','threads','instagram'))
+);
 CREATE TABLE IF NOT EXISTS books (book_id TEXT PRIMARY KEY, title TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS seed_invites (
  token_hash TEXT PRIMARY KEY, created_at TEXT NOT NULL, expires_at TEXT NOT NULL, used_at TEXT

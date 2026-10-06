@@ -28,6 +28,7 @@ const fs = require('node:fs');
         assert.equal(await page.locator(`[data-kpi="${name}"] > strong`).innerText(), '50.0%');
       }
       assert.equal(await page.locator('.book-dashboard-card').count(), 3);
+      assert.equal(await page.locator('#source-analysis .source-row').count(), 7);
       assert.equal(await page.locator('#test-data').count(), 0);
       const overflow = () => page.evaluate(() => ({page:document.documentElement.scrollWidth > innerWidth,
         elements:[...document.querySelectorAll('.dashboard, .dashboard *')].filter(e =>
@@ -44,6 +45,12 @@ const fs = require('node:fs');
       await page.screenshot({path:`artifacts/dashboard/admin-${width}-expanded.png`,fullPage:true});
     }
     assert.deepEqual(errors, []);
+    const participant = await browser.newPage();
+    await participant.goto(url + '/?src=dc&keep=1#entry');
+    await participant.waitForFunction(() => !new URL(location.href).searchParams.has('src'));
+    assert.equal(new URL(participant.url()).searchParams.get('keep'), '1');
+    assert.equal(new URL(participant.url()).hash, '#entry');
+    await participant.close();
     console.log('PASS: dashboard matches seeded union statistics; desktop 1440 and mobile 390/320 have no overflow, collapsed or expanded; three desktop cards fit 900px height.');
   } catch (error) {
     console.error(diagnostics.slice(-2000));

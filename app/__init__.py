@@ -76,6 +76,8 @@ def create_app(config=None):
             is_test = local_test
             reason = "local development" if local_test else None
             get_db().execute("INSERT INTO visitors VALUES (?,?,?,?,?,?)", (visitor_id, utcnow(), json.dumps(order), int(is_test), reason, secrets.token_urlsafe(32)))
+            from .services.attribution import normalize_source
+            get_db().execute("INSERT INTO visitor_attributions (visitor_id,source) VALUES (?,?) ON CONFLICT(visitor_id) DO NOTHING", (visitor_id, normalize_source(request.args.get("src"))))
             destination = request.full_path.rstrip("?")
             proof = confirm_signer.dumps({"destination": destination})
             response = redirect(url_for("confirm_cookie", proof=proof))

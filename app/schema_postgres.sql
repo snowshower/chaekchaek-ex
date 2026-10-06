@@ -3,6 +3,10 @@ CREATE TABLE IF NOT EXISTS visitors (
  is_test INTEGER NOT NULL DEFAULT 0 CHECK(is_test IN (0,1)), exclusion_reason TEXT COLLATE "C",
  csrf_token TEXT COLLATE "C" NOT NULL
 );
+CREATE TABLE IF NOT EXISTS visitor_attributions (
+ visitor_id TEXT COLLATE "C" PRIMARY KEY REFERENCES visitors,
+ source TEXT COLLATE "C" NOT NULL CHECK(source IN ('direct','slack','everytime','dc','arca','threads','instagram'))
+);
 CREATE TABLE IF NOT EXISTS books (book_id TEXT COLLATE "C" PRIMARY KEY, title TEXT COLLATE "C" NOT NULL);
 CREATE TABLE IF NOT EXISTS seed_invites (
  token_hash TEXT COLLATE "C" PRIMARY KEY, created_at TEXT COLLATE "C" NOT NULL,

@@ -1,4 +1,10 @@
 export const bootstrap = JSON.parse(document.querySelector('#bootstrap').dataset.json);
+// Attribution is already persisted server-side; this emits no request or event.
+const entryUrl = new URL(window.location.href);
+if (entryUrl.searchParams.has('src')) {
+  entryUrl.searchParams.delete('src');
+  window.history.replaceState(window.history.state, '', entryUrl.pathname + entryUrl.search + entryUrl.hash);
+}
 let sequence = 0;
 let queue = Promise.resolve();
 let pending = null;

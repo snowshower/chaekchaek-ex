@@ -26,6 +26,12 @@
 <dl class="book-event-metrics">{% for name,label in [('emoji_reaction','emoji'),('poll_vote','poll'),('community_open','community_open'),('others_reveal','others_reveal'),('like','like'),('reply_submit','reply')] %}{% set e = data.events|selectattr('name','equalto',name)|first %}<div data-event="{{ name }}"><dt>{{ label }}</dt><dd>{{ e.unique }}<small>명 · {{ e.count }}회</small></dd></div>{% endfor %}</dl>
 <details><summary>상세 지표</summary>{{ details_for(data) }}</details></article>{% endfor %}
 </section>
+<details class="dashboard-details" id="source-analysis"><summary>유입 채널 · 탐색적 지표</summary>
+<p>최초 유입 채널 · normal만 포함 · 기존 visitor 및 미확인 유입은 direct. 비율 분모는 기간 내 Book View UV이며 채널별 성공/실패 판정은 하지 않습니다.</p>
+<div class="source-funnel">{% for row in report.sources %}<article class="source-row" data-source="{{ row.source }}"><h3>{{ row.source }}</h3><dl>
+<div><dt>Landing UV</dt><dd>{{ row.landing }}</dd></div><div><dt>Book View UV</dt><dd>{{ row.book_view }}</dd></div>
+{% for m in row.metrics %}<div><dt>{{ {'light_participation':'Light Participation','text_participation':'Short Impression','community_direct':'Community Open','others_exposure':'Others Reveal'}[m.metric_name] }}</dt><dd>{{ percent(m.ratio) }} <small>{{ m.numerator }}/{{ m.denominator }}</small></dd></div>{% endfor %}
+</dl></article>{% endfor %}</div></details>
 <details class="dashboard-details"><summary>전체 상세 지표</summary>{{ details_for(total) }}</details>
 <details class="dashboard-details"><summary>랜딩·선택</summary><p>랜딩 {{ report.landing.count }}회 / {{ report.landing.unique }}명 · 선택 {{ report.selection.count }}회 / {{ report.selection.unique }}명 · 선택 연결 도서 방문 {{ report.selection.arrivals }}회 · 직접 방문 {{ report.selection.direct_arrivals }}회</p><div class="event-detail-list">{% for p in report.selection.positions %}<div><span>{{ p.book_id }} · 위치 {{ p.position }}</span><strong>표시 {{ p.display_count }} · 선택 {{ p.select_count }} · 고유 {{ p.unique }}</strong></div>{% endfor %}</div></details>
 <details class="dashboard-details"><summary>품질 확인</summary><p>시작 관측 없는 최초 제출 {{ report.quality.submit_without_start }}건<br>확인된 선행 노출 없는 상호작용 {{ report.quality.interaction_without_confirmed_exposure }}건<br>도착 순서·클라이언트 순서 불일치 {{ report.quality.client_order_arrival_mismatch }}건<br>제외 이벤트 {{ report.quality.excluded_events }}건</p><p class="muted">누락은 원천을 보존합니다. 운영자가 신뢰 기준을 확정하고 DATA_RELIABLE로 판정을 지정합니다.</p><details><summary>제외 ID·사유</summary>{% for v in report.excluded %}<p>{{ v.visitor_id }} · {{ v.exclusion_reason }}</p>{% endfor %}</details></details>

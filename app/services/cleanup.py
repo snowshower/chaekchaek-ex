@@ -7,7 +7,7 @@ from ..db import get_db
 # likes/replies -> reviews, every table below -> visitors. Exposures are events;
 # short impressions are reviews; idempotency responses are requests.
 PARTICIPATION_TABLES = ('requests', 'events', 'likes', 'replies', 'emoji_reactions',
-                        'poll_votes', 'reviews', 'page_views', 'seed_participants', 'visitors')
+                        'poll_votes', 'reviews', 'page_views', 'seed_participants', 'visitor_attributions', 'visitors')
 PRESERVED_TABLES = ('books', 'book_contents', 'seed_invites')
 
 
